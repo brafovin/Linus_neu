@@ -221,6 +221,7 @@
     <p>Du bist eingeschlafen. Aber etwas ist anders.</p>
     <p>Die Räume sind leer. Die Luft steht still. Irgendwo in dir spürst du, dass du hier schon einmal warst &mdash; in einem anderen Leben, an einem anderen Nachmittag.</p>
     <p>Finde die fünf Erinnerungsfragmente. Vielleicht wachst du dann auf.</p>
+    <p style="opacity:0.5;font-size:0.85rem;margin-top:1.5rem">&#x266A; Kopfhörer empfohlen</p>
     <div class="start">[ Leertaste oder Enter zum Eintreten ]</div>
     <div class="credits">ein kleines dreamcore spiel</div>
   </div>
@@ -241,6 +242,7 @@
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
+ctx.imageSmoothingEnabled = false;
 const miniCanvas = document.getElementById('minimap');
 const miniCtx = miniCanvas.getContext('2d');
 const titleEl = document.getElementById('title');
@@ -373,6 +375,7 @@ function startGame() {
   if (gameStarted) return;
   gameStarted = true;
   titleEl.classList.add('hide');
+  initAudio();
 }
 
 document.addEventListener('keydown', (e) => {
@@ -436,6 +439,7 @@ function tryCollect() {
     const n = memories.filter(x => x.collected).length;
     mcountEl.textContent = n;
     showStory(m.text);
+    playChime();
     if (n >= memories.length) {
       setTimeout(triggerEnd, 7500);
     }
@@ -489,9 +493,192 @@ function currentZoneType() {
   return 0;
 }
 
+// --- Procedural textures --------------------------------------
+// Each wall type gets a 64x64 canvas texture drawn once at startup.
+// Using canvases (not ImageData) lets the raycaster blit 1-pixel-wide
+// strips with drawImage(), which the browser accelerates.
+function createTexture(drawFn) {
+  const s = 64;
+  const cv = document.createElement('canvas');
+  cv.width = s;
+  cv.height = s;
+  const c = cv.getContext('2d');
+  drawFn(c, s);
+  return cv;
+}
+function addNoise(c, s, amount) {
+  const img = c.getImageData(0, 0, s, s);
+  const d = img.data;
+  for (let i = 0; i < d.length; i += 4) {
+    const n = (Math.random() - 0.5) * amount;
+    d[i]     = Math.max(0, Math.min(255, d[i] + n));
+    d[i + 1] = Math.max(0, Math.min(255, d[i + 1] + n));
+    d[i + 2] = Math.max(0, Math.min(255, d[i + 2] + n));
+  }
+  c.putImageData(img, 0, 0);
+}
+
+const textures = {};
+
+// Pink liminal wallpaper: pastel stripes + small floral dots + aged patches
+textures[1] = createTexture((c, s) => {
+  const g = c.createLinearGradient(0, 0, 0, s);
+  g.addColorStop(0, '#f6b3d5');
+  g.addColorStop(0.5, '#ecaacc');
+  g.addColorStop(1, '#d88fb8');
+  c.fillStyle = g;
+  c.fillRect(0, 0, s, s);
+  c.fillStyle = 'rgba(180, 100, 150, 0.22)';
+  for (let x = 0; x < s; x += 8) c.fillRect(x, 0, 2, s);
+  c.fillStyle = 'rgba(255, 245, 252, 0.55)';
+  for (let y = 4; y < s; y += 12) {
+    const off = ((y / 12) | 0) % 2 ? 6 : 0;
+    for (let x = off; x < s; x += 12) {
+      c.beginPath();
+      c.arc(x, y, 1.3, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+  const patch = c.createRadialGradient(22, 40, 2, 22, 40, 22);
+  patch.addColorStop(0, 'rgba(200, 170, 90, 0.22)');
+  patch.addColorStop(1, 'rgba(200, 170, 90, 0)');
+  c.fillStyle = patch;
+  c.fillRect(0, 0, s, s);
+  addNoise(c, s, 22);
+});
+
+// Yellow backrooms: wood paneling, water stains, vertical grain
+textures[2] = createTexture((c, s) => {
+  c.fillStyle = '#c8a040';
+  c.fillRect(0, 0, s, s);
+  const g = c.createLinearGradient(0, 0, 0, s);
+  g.addColorStop(0, 'rgba(200, 160, 50, 0.4)');
+  g.addColorStop(0.5, 'rgba(140, 100, 30, 0.2)');
+  g.addColorStop(1, 'rgba(80, 50, 10, 0.5)');
+  c.fillStyle = g;
+  c.fillRect(0, 0, s, s);
+  // Horizontal panel seams
+  c.fillStyle = 'rgba(40, 20, 10, 0.85)';
+  for (let y = 0; y < s; y += 16) c.fillRect(0, y, s, 1);
+  // Vertical grain
+  c.fillStyle = 'rgba(70, 40, 15, 0.28)';
+  for (let x = 0; x < s; x += 3) {
+    const o = ((Math.sin(x * 1.3) + 1) * 1.5) | 0;
+    c.fillRect(x + o, 0, 1, s);
+  }
+  // Water stains
+  for (const [sx, sy, sr] of [[42, 18, 16], [8, 48, 12]]) {
+    const st = c.createRadialGradient(sx, sy, 1, sx, sy, sr);
+    st.addColorStop(0, 'rgba(40, 20, 0, 0.55)');
+    st.addColorStop(0.6, 'rgba(40, 20, 0, 0.2)');
+    st.addColorStop(1, 'rgba(40, 20, 0, 0)');
+    c.fillStyle = st;
+    c.fillRect(0, 0, s, s);
+  }
+  addNoise(c, s, 28);
+});
+
+// Blue pool: tiled bathroom tiles with grout and highlights
+textures[3] = createTexture((c, s) => {
+  c.fillStyle = '#7aa8c8';
+  c.fillRect(0, 0, s, s);
+  // Per-tile variation
+  for (let y = 0; y < s; y += 8) {
+    for (let x = 0; x < s; x += 8) {
+      const v = (Math.random() - 0.5) * 30;
+      c.fillStyle = `rgba(${122 + v}, ${168 + v}, ${200 + v}, 1)`;
+      c.fillRect(x, y, 8, 8);
+      // Tile highlight
+      c.fillStyle = 'rgba(255, 255, 255, 0.18)';
+      c.fillRect(x + 1, y + 1, 6, 1);
+      c.fillRect(x + 1, y + 1, 1, 5);
+    }
+  }
+  // Grout lines
+  c.fillStyle = 'rgba(15, 25, 40, 0.85)';
+  for (let i = 0; i <= s; i += 8) {
+    c.fillRect(i, 0, 1, s);
+    c.fillRect(0, i, s, 1);
+  }
+  // Hairline cracks
+  c.strokeStyle = 'rgba(10, 20, 30, 0.3)';
+  c.lineWidth = 0.5;
+  c.beginPath();
+  c.moveTo(12, 4); c.lineTo(18, 30); c.lineTo(14, 52);
+  c.stroke();
+  addNoise(c, s, 15);
+});
+
+// Red childhood bedroom: warm vertical stripes with tiny floral pattern
+textures[4] = createTexture((c, s) => {
+  const g = c.createLinearGradient(0, 0, 0, s);
+  g.addColorStop(0, '#b83042');
+  g.addColorStop(1, '#7a1820');
+  c.fillStyle = g;
+  c.fillRect(0, 0, s, s);
+  c.fillStyle = 'rgba(250, 210, 160, 0.22)';
+  for (let x = 0; x < s; x += 10) c.fillRect(x, 0, 4, s);
+  c.fillStyle = 'rgba(60, 10, 15, 0.35)';
+  for (let x = 4; x < s; x += 10) c.fillRect(x, 0, 1, s);
+  // Tiny flowers
+  c.fillStyle = 'rgba(255, 220, 150, 0.65)';
+  for (let y = 8; y < s; y += 16) {
+    const off = ((y / 16) | 0) % 2 ? 8 : 0;
+    for (let x = 4 + off; x < s; x += 16) {
+      c.beginPath();
+      c.arc(x, y, 1.6, 0, Math.PI * 2);
+      c.fill();
+    }
+  }
+  c.fillStyle = 'rgba(200, 150, 100, 0.7)';
+  for (let y = 8; y < s; y += 16) {
+    const off = ((y / 16) | 0) % 2 ? 8 : 0;
+    for (let x = 4 + off; x < s; x += 16) {
+      c.fillRect(x - 0.3, y - 0.3, 0.6, 0.6);
+    }
+  }
+  addNoise(c, s, 22);
+});
+
+// White drywall: subtle imperfections and brush strokes
+textures[5] = createTexture((c, s) => {
+  const g = c.createLinearGradient(0, 0, 0, s);
+  g.addColorStop(0, '#f2ece2');
+  g.addColorStop(0.5, '#e8e0d4');
+  g.addColorStop(1, '#d8d0c2');
+  c.fillStyle = g;
+  c.fillRect(0, 0, s, s);
+  c.strokeStyle = 'rgba(170, 160, 150, 0.28)';
+  c.lineWidth = 0.6;
+  for (let i = 0; i < 10; i++) {
+    c.beginPath();
+    const sx = Math.random() * s;
+    c.moveTo(sx, 0);
+    c.bezierCurveTo(sx + (Math.random() - 0.5) * 20, s / 3,
+                    sx + (Math.random() - 0.5) * 20, s * 2 / 3,
+                    sx + (Math.random() - 0.5) * 20, s);
+    c.stroke();
+  }
+  // Small smudges
+  c.fillStyle = 'rgba(130, 120, 110, 0.18)';
+  for (let i = 0; i < 20; i++) {
+    c.beginPath();
+    c.arc(Math.random() * s, Math.random() * s, Math.random() * 1.4 + 0.4, 0, Math.PI * 2);
+    c.fill();
+  }
+  addNoise(c, s, 26);
+});
+
 // --- Raycaster -------------------------------------------------
-const FOV = Math.PI / 2.8;
+const FOV = Math.PI / 3;   // 60° — more intimate, less distorted
 const zBuffer = new Array(W);
+
+// Head bob / breathing state (updated each frame in the main loop)
+let bobPhase = 0;
+let isMoving = false;
+// Shared camera offset computed in renderWorld and reused by renderMemories
+let camOffX = 0;
+let camOffY = 0;
 
 function castRay(angle) {
   const cos = Math.cos(angle);
@@ -515,48 +702,79 @@ function castRay(angle) {
     if (map[mapY][mapX] > 0) { hitType = map[mapY][mapX]; break; }
   }
   const dist = side === 0 ? (sideX - deltaX) : (sideY - deltaY);
-  return { dist: Math.max(0.01, dist), type: hitType, side };
+
+  // Fractional position along the wall for texture U coordinate
+  let hitU;
+  if (side === 0) hitU = player.y + dist * sin;
+  else            hitU = player.x + dist * cos;
+  hitU -= Math.floor(hitU);
+  if (side === 0 && cos > 0) hitU = 1 - hitU;
+  if (side === 1 && sin < 0) hitU = 1 - hitU;
+
+  return { dist: Math.max(0.01, dist), type: hitType, side, hitU };
 }
 
-function renderWorld(dt) {
+function renderWorld() {
   // Ceiling/floor tinted by the zone currently surrounding the player
   const zone = currentZoneType();
   const tint = zoneTints[zone] || zoneTints[0];
 
-  const ceilGrad = ctx.createLinearGradient(0, 0, 0, H / 2);
+  // Head bob (sinusoidal vertical shift when walking) + idle breathing
+  const t = performance.now();
+  const bobY = isMoving ? Math.sin(bobPhase) * 4 : 0;
+  const bobX = isMoving ? Math.cos(bobPhase * 0.5) * 2.5 : 0;
+  const breath = Math.sin(t * 0.0015) * 2;
+  const voffset = bobY + breath;
+  camOffX = bobX;
+  camOffY = voffset;
+
+  const horizon = H / 2 + voffset;
+
+  // Ceiling
+  const ceilGrad = ctx.createLinearGradient(0, 0, 0, horizon);
   ceilGrad.addColorStop(0, '#000');
   ceilGrad.addColorStop(1, tint.ceil);
   ctx.fillStyle = ceilGrad;
-  ctx.fillRect(0, 0, W, H / 2);
+  ctx.fillRect(0, 0, W, horizon);
 
-  const floorGrad = ctx.createLinearGradient(0, H / 2, 0, H);
+  // Floor
+  const floorGrad = ctx.createLinearGradient(0, horizon, 0, H);
   floorGrad.addColorStop(0, tint.floor);
   floorGrad.addColorStop(1, '#000');
   ctx.fillStyle = floorGrad;
-  ctx.fillRect(0, H / 2, W, H / 2);
+  ctx.fillRect(0, horizon, W, H - horizon);
 
-  // Dreamy sway: tiny vertical offset based on time
-  const sway = Math.sin(performance.now() * 0.0015) * 3;
-
-  // Cast one ray per pixel column
+  // Cast one textured strip per pixel column
   for (let i = 0; i < W; i++) {
     const rayAngle = player.angle - FOV / 2 + (i / W) * FOV;
-    const { dist, type, side } = castRay(rayAngle);
+    const { dist, type, side, hitU } = castRay(rayAngle);
     const corrected = dist * Math.cos(rayAngle - player.angle);
     zBuffer[i] = corrected;
 
-    const lineH = Math.min(H * 2, (H / corrected));
-    const drawStart = (H - lineH) / 2 + sway;
+    const lineH = Math.min(H * 4, H / corrected);
+    const drawStart = horizon - lineH / 2;
 
-    const c = wallColors[type] || wallColors[1];
-    const base = side === 1 ? c.dark : c.light;
-    // Distance fog
-    const fog = Math.max(0, Math.min(1, corrected / 11));
-    const r = Math.round(base[0] * (1 - fog));
-    const g = Math.round(base[1] * (1 - fog));
-    const b = Math.round(base[2] * (1 - fog));
-    ctx.fillStyle = `rgb(${r},${g},${b})`;
-    ctx.fillRect(i, drawStart, 1, lineH);
+    const tex = textures[type] || textures[1];
+    const texW = tex.width;
+    let texX = Math.floor(hitU * texW);
+    if (texX < 0) texX = 0;
+    if (texX >= texW) texX = texW - 1;
+
+    // Blit a 1px-wide column of the texture, stretched to lineH
+    ctx.drawImage(tex, texX, 0, 1, tex.height, i + bobX, drawStart, 1, lineH);
+
+    // Side-face shading for a sense of depth
+    if (side === 1) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+      ctx.fillRect(i + bobX, drawStart, 1, lineH);
+    }
+
+    // Distance fog — blend wall toward black
+    const fog = Math.max(0, Math.min(1, (corrected - 0.5) / 10));
+    if (fog > 0) {
+      ctx.fillStyle = `rgba(0, 0, 0, ${fog * 0.88})`;
+      ctx.fillRect(i + bobX, drawStart, 1, lineH);
+    }
   }
 }
 
@@ -580,9 +798,9 @@ function renderMemories() {
     const camSide  = -v.dx * sin + v.dy * cos;
     if (camDepth <= 0.15) continue;
 
-    const screenX = Math.floor(W / 2 + (camSide / camDepth) * (W / 2));
+    const screenX = Math.floor(W / 2 + (camSide / camDepth) * (W / 2)) + camOffX;
     const size = Math.max(4, Math.floor(H / camDepth * 0.35));
-    const centerY = H / 2 + Math.sin(performance.now() * 0.003 + v.m.x) * 6;
+    const centerY = H / 2 + camOffY + Math.sin(performance.now() * 0.003 + v.m.x) * 6;
 
     // Occlusion check against z-buffer at sprite center
     if (screenX < 0 || screenX >= W) continue;
@@ -652,23 +870,166 @@ function renderMinimap() {
   miniCtx.stroke();
 }
 
-// --- Chromatic aberration + grain overlay ---------------------
+// --- Chromatic aberration + film grain overlay ---------------
+// Pre-generate a few grain tiles we can rotate through each frame —
+// drawing Math.random()s pixel-by-pixel every frame would tank the FPS.
+const grainTiles = [];
+(function makeGrainTiles() {
+  for (let t = 0; t < 4; t++) {
+    const g = document.createElement('canvas');
+    g.width = g.height = 128;
+    const gc = g.getContext('2d');
+    const img = gc.createImageData(128, 128);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const v = Math.random() * 255;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = 20; // alpha
+    }
+    gc.putImageData(img, 0, 0);
+    grainTiles.push(g);
+  }
+})();
+let grainIdx = 0;
+
 function renderPostFX() {
-  // Subtle chromatic aberration by drawing 2 slightly offset tinted rects
+  // Subtle chromatic aberration (two offset tinted overlays)
   ctx.globalCompositeOperation = 'screen';
-  ctx.fillStyle = 'rgba(255, 0, 80, 0.03)';
+  ctx.fillStyle = 'rgba(255, 0, 80, 0.035)';
   ctx.fillRect(-1, 0, W, H);
-  ctx.fillStyle = 'rgba(0, 200, 255, 0.03)';
+  ctx.fillStyle = 'rgba(0, 200, 255, 0.035)';
   ctx.fillRect(1, 0, W, H);
   ctx.globalCompositeOperation = 'source-over';
+
+  // Film grain — tile a random pregenerated noise texture across the screen
+  grainIdx = (grainIdx + 1) & 3;
+  const g = grainTiles[grainIdx];
+  const jx = (Math.random() * 128) | 0;
+  const jy = (Math.random() * 128) | 0;
+  ctx.globalAlpha = 0.18;
+  for (let y = -jy; y < H; y += 128) {
+    for (let x = -jx; x < W; x += 128) {
+      ctx.drawImage(g, x, y);
+    }
+  }
+  ctx.globalAlpha = 1;
+
+  // Heavy vignette for dream-tunnel feeling
+  const vg = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.75);
+  vg.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  vg.addColorStop(1, 'rgba(0, 0, 0, 0.75)');
+  ctx.fillStyle = vg;
+  ctx.fillRect(0, 0, W, H);
+}
+
+// --- Audio (procedural Web Audio ambience + SFX) --------------
+let audio = null;
+function initAudio() {
+  if (audio) return;
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return;
+  const ac = new AC();
+
+  // Master chain with a gentle lowpass so everything sounds "underwater"
+  const master = ac.createGain();
+  master.gain.value = 0.55;
+  const lp = ac.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 1600;
+  master.connect(lp);
+  lp.connect(ac.destination);
+
+  // Two slightly detuned sine drones — that classic dreamy hum
+  const drone = ac.createGain();
+  drone.gain.value = 0.18;
+  drone.connect(master);
+  const d1 = ac.createOscillator(); d1.type = 'sine'; d1.frequency.value = 55;
+  const d2 = ac.createOscillator(); d2.type = 'sine'; d2.frequency.value = 55.6;
+  const d3 = ac.createOscillator(); d3.type = 'triangle'; d3.frequency.value = 110;
+  const d3g = ac.createGain(); d3g.gain.value = 0.25;
+  d3.connect(d3g); d3g.connect(drone);
+  d1.connect(drone); d2.connect(drone);
+
+  // Slow LFO on drone amplitude — breathing
+  const lfo = ac.createOscillator();
+  lfo.frequency.value = 0.08;
+  const lfoGain = ac.createGain();
+  lfoGain.gain.value = 0.06;
+  lfo.connect(lfoGain);
+  lfoGain.connect(drone.gain);
+
+  // Pink noise "wind" — loops a 2-second noise buffer through a bandpass
+  const nBuf = ac.createBuffer(1, ac.sampleRate * 2, ac.sampleRate);
+  const nd = nBuf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < nd.length; i++) {
+    const white = Math.random() * 2 - 1;
+    last = 0.98 * last + 0.02 * white;   // cheap low-passed noise
+    nd[i] = last * 3;
+  }
+  const noise = ac.createBufferSource();
+  noise.buffer = nBuf;
+  noise.loop = true;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 450;
+  bp.Q.value = 0.8;
+  const noiseGain = ac.createGain();
+  noiseGain.gain.value = 0.12;
+  noise.connect(bp); bp.connect(noiseGain); noiseGain.connect(master);
+
+  d1.start(); d2.start(); d3.start(); lfo.start(); noise.start();
+
+  audio = { ac, master, lp };
+}
+
+function playFootstep() {
+  if (!audio) return;
+  const { ac, master } = audio;
+  const buf = ac.createBuffer(1, (0.18 * ac.sampleRate) | 0, ac.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) {
+    const env = Math.pow(1 - i / d.length, 2.2);
+    d[i] = (Math.random() * 2 - 1) * env;
+  }
+  const src = ac.createBufferSource();
+  src.buffer = buf;
+  const f = ac.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.value = 280 + Math.random() * 40;
+  const g = ac.createGain();
+  g.gain.value = 0.09;
+  src.connect(f); f.connect(g); g.connect(master);
+  src.start();
+}
+
+function playChime() {
+  if (!audio) return;
+  const { ac, master } = audio;
+  const now = ac.currentTime;
+  const notes = [523.25, 659.25, 783.99, 1046.5, 1318.5]; // C E G C E
+  notes.forEach((freq, i) => {
+    const o = ac.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = freq;
+    const g = ac.createGain();
+    const t0 = now + i * 0.14;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(0.13, t0 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0005, t0 + 1.6);
+    o.connect(g); g.connect(master);
+    o.start(t0);
+    o.stop(t0 + 1.7);
+  });
 }
 
 // --- Main loop -------------------------------------------------
 let last = performance.now();
+let stepAccum = 0;
 function loop(now) {
   const dt = Math.min(0.05, (now - last) / 1000);
   last = now;
 
+  isMoving = false;
   if (gameStarted && !finishing) {
     // Rotation (keyboard)
     if (keys['ArrowLeft'])  player.angle -= player.rotSpeed * dt;
@@ -681,9 +1042,21 @@ function loop(now) {
     if (keys['KeyD']) { dx += Math.cos(player.angle + Math.PI / 2); dy += Math.sin(player.angle + Math.PI / 2); }
     const mag = Math.hypot(dx, dy);
     if (mag > 0) {
+      const prevX = player.x, prevY = player.y;
       dx = dx / mag * player.speed * dt;
       dy = dy / mag * player.speed * dt;
       tryMove(player.x + dx, player.y + dy);
+      // Actual distance walked (collisions may reduce it)
+      const walked = Math.hypot(player.x - prevX, player.y - prevY);
+      if (walked > 0.0005) {
+        isMoving = true;
+        bobPhase += walked * 6.0;
+        stepAccum += walked;
+        if (stepAccum > 0.9) {
+          stepAccum = 0;
+          playFootstep();
+        }
+      }
     }
   }
 
