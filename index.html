@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TRAUMKERN — Ein Dreamcore Spiel</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: #000;
+    font-family: 'Courier New', Courier, monospace;
+    color: #e8d8f0;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #wrap {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #000;
+  }
+  #game {
+    display: block;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    max-width: 100%;
+    max-height: 100%;
+    background: #000;
+    cursor: none;
+  }
+  #minimap {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 160px;
+    height: 160px;
+    border: 1px solid rgba(240, 200, 255, 0.2);
+    background: rgba(5, 0, 15, 0.5);
+    image-rendering: pixelated;
+    pointer-events: none;
+    opacity: 0.7;
+  }
+  #overlay {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at center, transparent 30%, rgba(0,0,0,0.85) 100%);
+    mix-blend-mode: multiply;
+  }
+  #scanlines {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,0.18) 3px,
+      rgba(0,0,0,0) 4px
+    );
+    mix-blend-mode: multiply;
+    opacity: 0.6;
+  }
+  #hud {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    color: rgba(240, 210, 255, 0.75);
+    font-size: 0.9rem;
+    text-shadow: 0 0 8px rgba(200, 100, 200, 0.6);
+    pointer-events: none;
+    line-height: 1.6;
+  }
+  #hud .mem { font-size: 1.1rem; letter-spacing: 0.1rem; }
+  #hud .hint { opacity: 0.55; font-size: 0.8rem; margin-top: 0.5rem; }
+  #prompt {
+    position: absolute;
+    left: 50%;
+    top: 62%;
+    transform: translateX(-50%);
+    color: rgba(255, 220, 255, 0.9);
+    text-shadow: 0 0 10px rgba(255, 150, 220, 0.9);
+    font-size: 1rem;
+    letter-spacing: 0.15rem;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  #prompt.show { opacity: 1; }
+  #story {
+    position: absolute;
+    left: 50%;
+    bottom: 12%;
+    transform: translateX(-50%);
+    max-width: 620px;
+    padding: 1.6rem 2rem;
+    background: rgba(5, 0, 20, 0.78);
+    border: 1px solid rgba(255, 180, 220, 0.25);
+    color: #f0dfff;
+    text-align: center;
+    font-size: 1.1rem;
+    line-height: 1.7;
+    opacity: 0;
+    transition: opacity 1.2s;
+    pointer-events: none;
+    box-shadow: 0 0 60px rgba(180, 80, 200, 0.2);
+  }
+  #story.show { opacity: 1; }
+  #title {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, #1a0524 0%, #05000a 70%, #000 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem;
+    z-index: 10;
+    transition: opacity 1.8s;
+  }
+  #title.hide { opacity: 0; pointer-events: none; }
+  #title h1 {
+    font-size: clamp(2.5rem, 7vw, 5rem);
+    letter-spacing: 0.5rem;
+    color: #f5c6e0;
+    text-shadow:
+      0 0 10px #ff8fd5,
+      0 0 30px #c040a0,
+      0 0 60px #8b00ff;
+    margin-bottom: 1.5rem;
+    animation: flicker 5s infinite;
+    font-weight: normal;
+  }
+  #title p {
+    max-width: 520px;
+    color: #c8b8d0;
+    line-height: 1.75;
+    margin: 0.6rem 0;
+    font-size: 1rem;
+  }
+  #title .start {
+    margin-top: 2.5rem;
+    color: #ffb3d9;
+    font-size: 1.05rem;
+    letter-spacing: 0.15rem;
+    animation: pulse 2.2s infinite;
+  }
+  #title .credits {
+    position: absolute;
+    bottom: 20px;
+    color: rgba(200, 180, 220, 0.4);
+    font-size: 0.75rem;
+    letter-spacing: 0.1rem;
+  }
+  @keyframes flicker {
+    0%, 100% { opacity: 1; }
+    93% { opacity: 1; }
+    94% { opacity: 0.35; }
+    95% { opacity: 1; }
+    96% { opacity: 0.6; }
+    97% { opacity: 1; }
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+  }
+  #end {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, #fff 0%, #f5efe0 80%, #e8d8c0 100%);
+    opacity: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #2a1a10;
+    text-align: center;
+    padding: 2rem;
+    transition: opacity 4s;
+    pointer-events: none;
+    z-index: 20;
+  }
+  #end.show { opacity: 1; pointer-events: auto; }
+  #end h2 {
+    font-size: 2.6rem;
+    font-weight: normal;
+    letter-spacing: 0.4rem;
+    margin-bottom: 1.5rem;
+    color: #4a2020;
+  }
+  #end p {
+    max-width: 540px;
+    line-height: 1.8;
+    margin: 0.4rem 0;
+    font-size: 1.05rem;
+  }
+  #end .hint { margin-top: 2rem; opacity: 0.5; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="800" height="600"></canvas>
+  <canvas id="minimap" width="160" height="160"></canvas>
+  <div id="overlay"></div>
+  <div id="scanlines"></div>
+  <div id="hud">
+    <div class="mem">Erinnerungen&nbsp;&nbsp;<span id="mcount">0</span>&thinsp;/&thinsp;5</div>
+    <div class="hint">WASD laufen&nbsp;&nbsp;•&nbsp;&nbsp;Maus schauen&nbsp;&nbsp;•&nbsp;&nbsp;E aufheben</div>
+  </div>
+  <div id="prompt">[ E ] &mdash; berühren</div>
+  <div id="story"></div>
+  <div id="title">
+    <h1>TRAUMKERN</h1>
+    <p>Du bist eingeschlafen. Aber etwas ist anders.</p>
+    <p>Die Räume sind leer. Die Luft steht still. Irgendwo in dir spürst du, dass du hier schon einmal warst &mdash; in einem anderen Leben, an einem anderen Nachmittag.</p>
+    <p>Finde die fünf Erinnerungsfragmente. Vielleicht wachst du dann auf.</p>
+    <div class="start">[ Klicken zum Eintreten ]</div>
+    <div class="credits">ein kleines dreamcore spiel</div>
+  </div>
+  <div id="end">
+    <h2>AUFGEWACHT</h2>
+    <p>Das Nachmittagslicht fällt schräg durch die Jalousien. Draußen fährt ein Auto vorbei.</p>
+    <p>Du erinnerst dich an einen Traum, aber die Details lösen sich schon wieder auf &mdash; so wie es sein muss.</p>
+    <p class="hint">(Seite neu laden, um erneut zu träumen.)</p>
+  </div>
+</div>
+<script>
+'use strict';
+
+// ============================================================
+//  TRAUMKERN — A small Dreamcore game
+//  First-person raycaster exploration with memory collection
+// ============================================================
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const miniCanvas = document.getElementById('minimap');
+const miniCtx = miniCanvas.getContext('2d');
+const titleEl = document.getElementById('title');
+const storyEl = document.getElementById('story');
+const promptEl = document.getElementById('prompt');
+const endEl = document.getElementById('end');
+const mcountEl = document.getElementById('mcount');
+
+const W = canvas.width;
+const H = canvas.height;
+
+// --- Map ------------------------------------------------------
+// Wall types:
+//   1 = pink (liminal hallway)
+//   2 = yellow (backrooms)
+//   3 = blue (empty pool)
+//   4 = red (childhood bedroom)
+//   5 = white (final room)
+const MAP_W = 32;
+const MAP_H = 32;
+const map = [];
+for (let y = 0; y < MAP_H; y++) {
+  map.push(new Array(MAP_W).fill(1));
+}
+
+function carve(x1, y1, x2, y2) {
+  for (let y = y1; y <= y2; y++) {
+    for (let x = x1; x <= x2; x++) {
+      if (x >= 0 && x < MAP_W && y >= 0 && y < MAP_H) map[y][x] = 0;
+    }
+  }
+}
+function paintBorder(x1, y1, x2, y2, t) {
+  for (let x = x1 - 1; x <= x2 + 1; x++) {
+    if (y1 - 1 >= 0 && map[y1 - 1][x] > 0) map[y1 - 1][x] = t;
+    if (y2 + 1 < MAP_H && map[y2 + 1][x] > 0) map[y2 + 1][x] = t;
+  }
+  for (let y = y1 - 1; y <= y2 + 1; y++) {
+    if (x1 - 1 >= 0 && map[y][x1 - 1] > 0) map[y][x1 - 1] = t;
+    if (x2 + 1 < MAP_W && map[y][x2 + 1] > 0) map[y][x2 + 1] = t;
+  }
+}
+
+// Five zones
+carve(2, 2, 10, 10);        // A: pink start
+carve(21, 2, 29, 10);       // B: yellow
+carve(21, 21, 29, 29);      // C: blue
+carve(2, 21, 10, 29);       // D: red
+carve(14, 14, 17, 17);      // E: white (center)
+
+// Cross-shaped corridors connecting corners through the center
+carve(11, 6, 20, 6);        // A -> B
+carve(11, 25, 20, 25);      // D -> C
+carve(6, 11, 6, 20);        // A -> D
+carve(25, 11, 25, 20);      // B -> C
+// Corridors reaching into the central white room
+carve(15, 7, 16, 13);       // top arm
+carve(15, 18, 16, 24);      // bottom arm
+carve(7, 15, 13, 16);       // left arm
+carve(18, 15, 24, 16);      // right arm
+
+// Paint each zone's walls with its color
+paintBorder(2, 2, 10, 10, 1);
+paintBorder(21, 2, 29, 10, 2);
+paintBorder(21, 21, 29, 29, 3);
+paintBorder(2, 21, 10, 29, 4);
+paintBorder(14, 14, 17, 17, 5);
+
+// --- Zone details (pillars, furniture, pool, bed) ------------
+// Pink room: a couple of inner pillars
+map[4][4] = 1; map[4][8] = 1;
+map[8][4] = 1; map[8][8] = 1;
+
+// Yellow backrooms: shifted pillars for maze feel
+map[4][23] = 2; map[4][24] = 2;
+map[4][27] = 2;
+map[7][25] = 2; map[7][26] = 2;
+map[8][23] = 2;
+
+// Blue pool: inner "pool rim" walls
+for (let x = 23; x <= 27; x++) { map[23][x] = 3; map[27][x] = 3; }
+for (let y = 24; y <= 26; y++) { map[y][23] = 3; map[y][27] = 3; }
+map[23][25] = 0; // pool opening
+
+// Red bedroom: a bed in the corner
+map[24][4] = 4; map[24][5] = 4;
+map[25][4] = 4; map[25][5] = 4;
+map[26][4] = 4; map[26][5] = 4;
+// And a little nightstand
+map[24][7] = 4;
+
+// --- Memories --------------------------------------------------
+const memories = [
+  {
+    x: 5.5, y: 5.5, zone: 'A', collected: false,
+    text: 'Du erinnerst dich an einen Sommernachmittag. Ein Ventilator, der die warme Luft im Kreis schob. Du warst allein zuhause, und das war schön.'
+  },
+  {
+    x: 26.5, y: 5.5, zone: 'B', collected: false,
+    text: 'Flur Nr. 7C. Ein Gebäude, das es nie gab. Du warst hier oft in Träumen. Das Summen der Lampen klingt wie ein Lied, an das du dich fast erinnerst.'
+  },
+  {
+    x: 25.5, y: 25.5, zone: 'C', collected: false,
+    text: 'Das Becken war immer schon leer. Die Kacheln kalt. Du hast einmal hineingeblickt und nicht mehr hochgesehen, aus Angst, jemand würde zurückschauen.'
+  },
+  {
+    x: 5.5, y: 28.0, zone: 'D', collected: false,
+    text: 'Das Licht am Nachmittag, durch Vorhänge mit Bären drauf. Jemand rief zum Essen, aber du wolltest noch fünf Minuten. Noch fünf Minuten.'
+  },
+  {
+    x: 15.5, y: 15.5, zone: 'E', collected: false,
+    text: 'Jetzt erinnerst du dich: Das hier ist kein Traum. Du versuchst nur, dich an einen zu erinnern. An das Gefühl, als alles noch möglich war.'
+  },
+];
+
+// --- Player ----------------------------------------------------
+const player = {
+  x: 3.5, y: 3.5,
+  angle: Math.PI * 0.25,
+  speed: 2.6,       // cells per second
+  rotSpeed: 2.2,
+};
+
+// --- Input -----------------------------------------------------
+const keys = Object.create(null);
+let gameStarted = false;
+let finishing = false;
+
+document.addEventListener('keydown', (e) => {
+  keys[e.code] = true;
+  if (e.code === 'KeyE' && gameStarted) tryCollect();
+});
+document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+canvas.addEventListener('click', () => {
+  if (!gameStarted) {
+    gameStarted = true;
+    titleEl.classList.add('hide');
+  }
+  if (canvas.requestPointerLock) canvas.requestPointerLock();
+});
+
+document.addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement === canvas) {
+    player.angle += e.movementX * 0.0022;
+  }
+});
+
+// --- Collision helper -----------------------------------------
+function isWall(x, y) {
+  const mx = Math.floor(x);
+  const my = Math.floor(y);
+  if (mx < 0 || mx >= MAP_W || my < 0 || my >= MAP_H) return true;
+  return map[my][mx] > 0;
+}
+function tryMove(nx, ny) {
+  const pad = 0.22;
+  if (!isWall(nx + pad, player.y) && !isWall(nx - pad, player.y)) player.x = nx;
+  if (!isWall(player.x, ny + pad) && !isWall(player.x, ny - pad)) player.y = ny;
+}
+
+// --- Memory logic ---------------------------------------------
+function nearestUncollected() {
+  let best = null, bestD = Infinity;
+  for (const m of memories) {
+    if (m.collected) continue;
+    const dx = m.x - player.x;
+    const dy = m.y - player.y;
+    const d = Math.hypot(dx, dy);
+    if (d < bestD) { bestD = d; best = m; }
+  }
+  return { m: best, d: bestD };
+}
+function tryCollect() {
+  const { m, d } = nearestUncollected();
+  if (m && d < 0.9) {
+    m.collected = true;
+    const n = memories.filter(x => x.collected).length;
+    mcountEl.textContent = n;
+    showStory(m.text);
+    if (n >= memories.length) {
+      setTimeout(triggerEnd, 7500);
+    }
+  }
+}
+let storyTimeout = 0;
+function showStory(text) {
+  storyEl.textContent = text;
+  storyEl.classList.add('show');
+  clearTimeout(storyTimeout);
+  storyTimeout = setTimeout(() => storyEl.classList.remove('show'), 6500);
+}
+function triggerEnd() {
+  finishing = true;
+  endEl.classList.add('show');
+  if (document.exitPointerLock) document.exitPointerLock();
+}
+
+// --- Colors ----------------------------------------------------
+// Each wall type has a base color + a "side" darkened color
+const wallColors = {
+  1: { light: [255, 170, 210], dark: [200, 110, 170] }, // pink
+  2: { light: [230, 210, 110], dark: [170, 150, 60]  }, // yellow
+  3: { light: [140, 190, 230], dark: [80, 130, 180]  }, // blue
+  4: { light: [200, 90, 100],  dark: [140, 50, 60]   }, // red
+  5: { light: [245, 240, 250], dark: [190, 180, 200] }, // white
+};
+// Floor/ceiling tints based on the current zone the player is in
+const zoneTints = {
+  1: { ceil: '#2a0814', floor: '#3a1428' }, // pink
+  2: { ceil: '#2a2208', floor: '#4a3c10' }, // yellow
+  3: { ceil: '#061a2a', floor: '#0c2a40' }, // blue
+  4: { ceil: '#2a0608', floor: '#401012' }, // red
+  5: { ceil: '#28242c', floor: '#48444c' }, // white/grey
+  0: { ceil: '#120820', floor: '#20102a' }, // neutral corridor
+};
+function currentZoneType() {
+  // Look a short way in each cardinal direction to decide the closest wall type
+  const px = Math.floor(player.x);
+  const py = Math.floor(player.y);
+  // Search outward for the first wall
+  for (let r = 1; r < 6; r++) {
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+        const t = map[py + dy] && map[py + dy][px + dx];
+        if (t > 0) return t;
+      }
+    }
+  }
+  return 0;
+}
+
+// --- Raycaster -------------------------------------------------
+const FOV = Math.PI / 2.8;
+const zBuffer = new Array(W);
+
+function castRay(angle) {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  let mapX = Math.floor(player.x);
+  let mapY = Math.floor(player.y);
+  const deltaX = Math.abs(1 / cos);
+  const deltaY = Math.abs(1 / sin);
+  let stepX, stepY, sideX, sideY;
+  if (cos < 0) { stepX = -1; sideX = (player.x - mapX) * deltaX; }
+  else         { stepX = 1;  sideX = (mapX + 1 - player.x) * deltaX; }
+  if (sin < 0) { stepY = -1; sideY = (player.y - mapY) * deltaY; }
+  else         { stepY = 1;  sideY = (mapY + 1 - player.y) * deltaY; }
+
+  let side = 0;
+  let hitType = 0;
+  for (let i = 0; i < 64; i++) {
+    if (sideX < sideY) { sideX += deltaX; mapX += stepX; side = 0; }
+    else                { sideY += deltaY; mapY += stepY; side = 1; }
+    if (mapX < 0 || mapX >= MAP_W || mapY < 0 || mapY >= MAP_H) break;
+    if (map[mapY][mapX] > 0) { hitType = map[mapY][mapX]; break; }
+  }
+  const dist = side === 0 ? (sideX - deltaX) : (sideY - deltaY);
+  return { dist: Math.max(0.01, dist), type: hitType, side };
+}
+
+function renderWorld(dt) {
+  // Ceiling/floor tinted by the zone currently surrounding the player
+  const zone = currentZoneType();
+  const tint = zoneTints[zone] || zoneTints[0];
+
+  const ceilGrad = ctx.createLinearGradient(0, 0, 0, H / 2);
+  ceilGrad.addColorStop(0, '#000');
+  ceilGrad.addColorStop(1, tint.ceil);
+  ctx.fillStyle = ceilGrad;
+  ctx.fillRect(0, 0, W, H / 2);
+
+  const floorGrad = ctx.createLinearGradient(0, H / 2, 0, H);
+  floorGrad.addColorStop(0, tint.floor);
+  floorGrad.addColorStop(1, '#000');
+  ctx.fillStyle = floorGrad;
+  ctx.fillRect(0, H / 2, W, H / 2);
+
+  // Dreamy sway: tiny vertical offset based on time
+  const sway = Math.sin(performance.now() * 0.0015) * 3;
+
+  // Cast one ray per pixel column
+  for (let i = 0; i < W; i++) {
+    const rayAngle = player.angle - FOV / 2 + (i / W) * FOV;
+    const { dist, type, side } = castRay(rayAngle);
+    const corrected = dist * Math.cos(rayAngle - player.angle);
+    zBuffer[i] = corrected;
+
+    const lineH = Math.min(H * 2, (H / corrected));
+    const drawStart = (H - lineH) / 2 + sway;
+
+    const c = wallColors[type] || wallColors[1];
+    const base = side === 1 ? c.dark : c.light;
+    // Distance fog
+    const fog = Math.max(0, Math.min(1, corrected / 11));
+    const r = Math.round(base[0] * (1 - fog));
+    const g = Math.round(base[1] * (1 - fog));
+    const b = Math.round(base[2] * (1 - fog));
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillRect(i, drawStart, 1, lineH);
+  }
+}
+
+function renderMemories() {
+  // Sort memories by distance (far first so near draws on top)
+  const visible = [];
+  for (const m of memories) {
+    if (m.collected) continue;
+    const dx = m.x - player.x;
+    const dy = m.y - player.y;
+    visible.push({ m, dx, dy, d2: dx * dx + dy * dy });
+  }
+  visible.sort((a, b) => b.d2 - a.d2);
+
+  const cos = Math.cos(player.angle);
+  const sin = Math.sin(player.angle);
+
+  for (const v of visible) {
+    // Transform into camera space
+    const camDepth = v.dx * cos + v.dy * sin;
+    const camSide  = -v.dx * sin + v.dy * cos;
+    if (camDepth <= 0.15) continue;
+
+    const screenX = Math.floor(W / 2 + (camSide / camDepth) * (W / 2));
+    const size = Math.max(4, Math.floor(H / camDepth * 0.35));
+    const centerY = H / 2 + Math.sin(performance.now() * 0.003 + v.m.x) * 6;
+
+    // Occlusion check against z-buffer at sprite center
+    if (screenX < 0 || screenX >= W) continue;
+    if (zBuffer[screenX] < camDepth - 0.05) continue;
+
+    // Glow + pulse
+    const pulse = 0.75 + Math.sin(performance.now() * 0.004 + v.m.y) * 0.25;
+    const radius = size * pulse;
+    const grad = ctx.createRadialGradient(screenX, centerY, 0, screenX, centerY, radius * 2);
+    grad.addColorStop(0, 'rgba(255, 240, 255, 0.95)');
+    grad.addColorStop(0.25, 'rgba(255, 200, 240, 0.75)');
+    grad.addColorStop(0.6, 'rgba(220, 130, 220, 0.25)');
+    grad.addColorStop(1, 'rgba(180, 80, 200, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(screenX - radius * 2, centerY - radius * 2, radius * 4, radius * 4);
+
+    // Inner bright core
+    ctx.beginPath();
+    ctx.arc(screenX, centerY, radius * 0.35, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fill();
+  }
+}
+
+function renderCrosshair() {
+  ctx.strokeStyle = 'rgba(255, 220, 255, 0.4)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(W / 2 - 4, H / 2); ctx.lineTo(W / 2 + 4, H / 2);
+  ctx.moveTo(W / 2, H / 2 - 4); ctx.lineTo(W / 2, H / 2 + 4);
+  ctx.stroke();
+}
+
+function renderMinimap() {
+  const s = 5; // pixels per cell
+  miniCtx.fillStyle = 'rgba(5, 0, 15, 0.75)';
+  miniCtx.fillRect(0, 0, 160, 160);
+  for (let y = 0; y < MAP_H; y++) {
+    for (let x = 0; x < MAP_W; x++) {
+      const t = map[y][x];
+      if (t > 0) {
+        const c = wallColors[t] || wallColors[1];
+        miniCtx.fillStyle = `rgba(${c.light[0]},${c.light[1]},${c.light[2]},0.7)`;
+        miniCtx.fillRect(x * s, y * s, s, s);
+      }
+    }
+  }
+  // Memories
+  for (const m of memories) {
+    if (m.collected) continue;
+    miniCtx.fillStyle = '#fff';
+    miniCtx.fillRect(m.x * s - 1, m.y * s - 1, 2, 2);
+  }
+  // Player
+  miniCtx.fillStyle = '#ff9be0';
+  miniCtx.beginPath();
+  miniCtx.arc(player.x * s, player.y * s, 2, 0, Math.PI * 2);
+  miniCtx.fill();
+  // Facing line
+  miniCtx.strokeStyle = '#ff9be0';
+  miniCtx.beginPath();
+  miniCtx.moveTo(player.x * s, player.y * s);
+  miniCtx.lineTo(
+    player.x * s + Math.cos(player.angle) * 6,
+    player.y * s + Math.sin(player.angle) * 6
+  );
+  miniCtx.stroke();
+}
+
+// --- Chromatic aberration + grain overlay ---------------------
+function renderPostFX() {
+  // Subtle chromatic aberration by drawing 2 slightly offset tinted rects
+  ctx.globalCompositeOperation = 'screen';
+  ctx.fillStyle = 'rgba(255, 0, 80, 0.03)';
+  ctx.fillRect(-1, 0, W, H);
+  ctx.fillStyle = 'rgba(0, 200, 255, 0.03)';
+  ctx.fillRect(1, 0, W, H);
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// --- Main loop -------------------------------------------------
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+
+  if (gameStarted && !finishing) {
+    // Rotation (keyboard)
+    if (keys['ArrowLeft'])  player.angle -= player.rotSpeed * dt;
+    if (keys['ArrowRight']) player.angle += player.rotSpeed * dt;
+    // Movement
+    let dx = 0, dy = 0;
+    if (keys['KeyW'] || keys['ArrowUp'])    { dx += Math.cos(player.angle); dy += Math.sin(player.angle); }
+    if (keys['KeyS'] || keys['ArrowDown'])  { dx -= Math.cos(player.angle); dy -= Math.sin(player.angle); }
+    if (keys['KeyA']) { dx += Math.cos(player.angle - Math.PI / 2); dy += Math.sin(player.angle - Math.PI / 2); }
+    if (keys['KeyD']) { dx += Math.cos(player.angle + Math.PI / 2); dy += Math.sin(player.angle + Math.PI / 2); }
+    const mag = Math.hypot(dx, dy);
+    if (mag > 0) {
+      dx = dx / mag * player.speed * dt;
+      dy = dy / mag * player.speed * dt;
+      tryMove(player.x + dx, player.y + dy);
+    }
+  }
+
+  renderWorld();
+  renderMemories();
+  renderCrosshair();
+  renderPostFX();
+  renderMinimap();
+
+  // Prompt near an uncollected memory
+  if (gameStarted && !finishing) {
+    const { m, d } = nearestUncollected();
+    if (m && d < 0.9) promptEl.classList.add('show');
+    else              promptEl.classList.remove('show');
+  } else {
+    promptEl.classList.remove('show');
+  }
+
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
