@@ -202,6 +202,37 @@
     font-size: 1.05rem;
   }
   #end .hint { margin-top: 2rem; opacity: 0.5; font-size: 0.85rem; }
+  #chapter {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at center, #080410 0%, #000 80%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 2.2s;
+    z-index: 15;
+  }
+  #chapter.show { opacity: 1; }
+  #chapter h2 {
+    font-size: clamp(1.6rem, 4vw, 2.6rem);
+    letter-spacing: 0.3rem;
+    color: #f5c6e0;
+    text-shadow: 0 0 20px #c040a0, 0 0 50px #6b0080;
+    margin-bottom: 2rem;
+    font-weight: normal;
+  }
+  #chapter p {
+    max-width: 520px;
+    color: #c0b0d0;
+    line-height: 1.8;
+    font-size: 1.05rem;
+    margin: 0.4rem 0;
+  }
 </style>
 </head>
 <body>
@@ -211,16 +242,21 @@
   <div id="overlay"></div>
   <div id="scanlines"></div>
   <div id="hud">
-    <div class="mem">Erinnerungen&nbsp;&nbsp;<span id="mcount">0</span>&thinsp;/&thinsp;5</div>
+    <div class="mem" id="chapter-hud" style="font-size:0.85rem;opacity:0.6;letter-spacing:0.15rem">&nbsp;</div>
+    <div class="mem">Erinnerungen&nbsp;&nbsp;<span id="mcount">0</span>&thinsp;/&thinsp;<span id="mtotal">5</span></div>
     <div class="hint">W&thinsp;A&thinsp;S&thinsp;D laufen&nbsp;&nbsp;•&nbsp;&nbsp;&larr;&thinsp;&rarr; drehen&nbsp;&nbsp;•&nbsp;&nbsp;E aufheben</div>
   </div>
   <div id="prompt">[ E ] &mdash; berühren</div>
   <div id="story"></div>
+  <div id="chapter">
+    <h2 id="chapter-title"></h2>
+    <p id="chapter-text"></p>
+  </div>
   <div id="title">
     <h1>TRAUMKERN</h1>
     <p>Du bist eingeschlafen. Aber etwas ist anders.</p>
     <p>Die Räume sind leer. Die Luft steht still. Irgendwo in dir spürst du, dass du hier schon einmal warst &mdash; in einem anderen Leben, an einem anderen Nachmittag.</p>
-    <p>Finde die fünf Erinnerungsfragmente. Vielleicht wachst du dann auf.</p>
+    <p>Drei Kapitel weit bis zum Morgen. Sammle die Erinnerungen, die du unterwegs verlierst.</p>
     <p style="opacity:0.5;font-size:0.85rem;margin-top:1.5rem">&#x266A; Kopfhörer empfohlen</p>
     <div class="start">[ Leertaste oder Enter zum Eintreten ]</div>
     <div class="credits">ein kleines dreamcore spiel</div>
@@ -254,19 +290,19 @@ const mcountEl = document.getElementById('mcount');
 const W = canvas.width;
 const H = canvas.height;
 
-// --- Map ------------------------------------------------------
-// Wall types:
-//   1 = pink (liminal hallway)
-//   2 = yellow (backrooms)
-//   3 = blue (empty pool)
-//   4 = red (childhood bedroom)
-//   5 = white (final room)
-const MAP_W = 32;
-const MAP_H = 32;
-const map = [];
-for (let y = 0; y < MAP_H; y++) {
-  map.push(new Array(MAP_W).fill(1));
-}
+// --- Map + Levels ---------------------------------------------
+// Wall types are used as a small palette of "wall kinds". The
+// meaning of each number changes per level so we can tint them
+// differently and give each chapter its own identity.
+let MAP_W = 32;
+let MAP_H = 32;
+const map = [];    // rebuilt every time we load a level
+const memories = [];
+let currentLevel = 0;
+
+// Per-level visual configuration (fog colors, floor/ceiling tint,
+// list of wall-color palettes, etc.). Populated below.
+const levelConfig = [];
 
 function carve(x1, y1, x2, y2) {
   for (let y = y1; y <= y2; y++) {
@@ -286,77 +322,195 @@ function paintBorder(x1, y1, x2, y2, t) {
   }
 }
 
-// Five zones
-carve(2, 2, 10, 10);        // A: pink start
-carve(21, 2, 29, 10);       // B: yellow
-carve(21, 21, 29, 29);      // C: blue
-carve(2, 21, 10, 29);       // D: red
-carve(14, 14, 17, 17);      // E: white (center)
+function freshMap() {
+  map.length = 0;
+  for (let y = 0; y < MAP_H; y++) {
+    map.push(new Array(MAP_W).fill(1));
+  }
+}
 
-// Cross-shaped corridors connecting corners through the center
-carve(11, 6, 20, 6);        // A -> B
-carve(11, 25, 20, 25);      // D -> C
-carve(6, 11, 6, 20);        // A -> D
-carve(25, 11, 25, 20);      // B -> C
-// Corridors reaching into the central white room
-carve(15, 7, 16, 13);       // top arm
-carve(15, 18, 16, 24);      // bottom arm
-carve(7, 15, 13, 16);       // left arm
-carve(18, 15, 24, 16);      // right arm
+// ============================================================
+//  LEVEL 1 — Der Nachmittag
+//  The dream-house with five colored rooms connected by corridors.
+// ============================================================
+function buildLevel1() {
+  MAP_W = 32; MAP_H = 32;
+  freshMap();
 
-// Paint each zone's walls with its color
-paintBorder(2, 2, 10, 10, 1);
-paintBorder(21, 2, 29, 10, 2);
-paintBorder(21, 21, 29, 29, 3);
-paintBorder(2, 21, 10, 29, 4);
-paintBorder(14, 14, 17, 17, 5);
+  // Five zones
+  carve(2, 2, 10, 10);        // A: pink start
+  carve(21, 2, 29, 10);       // B: yellow
+  carve(21, 21, 29, 29);      // C: blue
+  carve(2, 21, 10, 29);       // D: red
+  carve(14, 14, 17, 17);      // E: white center
 
-// --- Zone details (pillars, furniture, pool, bed) ------------
-// Pink room: a couple of inner pillars
-map[4][4] = 1; map[4][8] = 1;
-map[8][4] = 1; map[8][8] = 1;
+  // Cross-shaped corridors
+  carve(11, 6, 20, 6);
+  carve(11, 25, 20, 25);
+  carve(6, 11, 6, 20);
+  carve(25, 11, 25, 20);
+  carve(15, 7, 16, 13);
+  carve(15, 18, 16, 24);
+  carve(7, 15, 13, 16);
+  carve(18, 15, 24, 16);
 
-// Yellow backrooms: shifted pillars for maze feel
-map[4][23] = 2; map[4][24] = 2;
-map[4][27] = 2;
-map[7][25] = 2; map[7][26] = 2;
-map[8][23] = 2;
+  // Paint each zone's walls with its type
+  paintBorder(2, 2, 10, 10, 1);
+  paintBorder(21, 2, 29, 10, 2);
+  paintBorder(21, 21, 29, 29, 3);
+  paintBorder(2, 21, 10, 29, 4);
+  paintBorder(14, 14, 17, 17, 5);
 
-// Blue pool: inner "pool rim" walls
-for (let x = 23; x <= 27; x++) { map[23][x] = 3; map[27][x] = 3; }
-for (let y = 24; y <= 26; y++) { map[y][23] = 3; map[y][27] = 3; }
-map[23][25] = 0; // pool opening
+  // Decorative pillars / furniture
+  map[4][4] = 1; map[4][8] = 1;
+  map[8][4] = 1; map[8][8] = 1;
+  map[4][23] = 2; map[4][24] = 2;
+  map[4][27] = 2;
+  map[7][25] = 2; map[7][26] = 2;
+  map[8][23] = 2;
+  for (let x = 23; x <= 27; x++) { map[23][x] = 3; map[27][x] = 3; }
+  for (let y = 24; y <= 26; y++) { map[y][23] = 3; map[y][27] = 3; }
+  map[23][25] = 0;
+  map[24][4] = 4; map[24][5] = 4;
+  map[25][4] = 4; map[25][5] = 4;
+  map[26][4] = 4; map[26][5] = 4;
+  map[24][7] = 4;
 
-// Red bedroom: a bed in the corner
-map[24][4] = 4; map[24][5] = 4;
-map[25][4] = 4; map[25][5] = 4;
-map[26][4] = 4; map[26][5] = 4;
-// And a little nightstand
-map[24][7] = 4;
+  memories.length = 0;
+  memories.push(
+    { x: 5.5, y: 5.5, collected: false,
+      text: 'Du erinnerst dich an einen Sommernachmittag. Ein Ventilator, der die warme Luft im Kreis schob. Du warst allein zuhause, und das war schön.' },
+    { x: 26.5, y: 5.5, collected: false,
+      text: 'Flur Nr. 7C. Ein Gebäude, das es nie gab. Du warst hier oft in Träumen. Das Summen der Lampen klingt wie ein Lied, an das du dich fast erinnerst.' },
+    { x: 25.5, y: 25.5, collected: false,
+      text: 'Das Becken war immer schon leer. Die Kacheln kalt. Du hast einmal hineingeblickt und nicht mehr hochgesehen, aus Angst, jemand würde zurückschauen.' },
+    { x: 5.5, y: 28.0, collected: false,
+      text: 'Das Licht am Nachmittag, durch Vorhänge mit Bären drauf. Jemand rief zum Essen, aber du wolltest noch fünf Minuten. Noch fünf Minuten.' },
+    { x: 15.5, y: 15.5, collected: false,
+      text: 'Jetzt erinnerst du dich: Das hier ist kein Traum. Du versuchst nur, dich an einen zu erinnern. An das Gefühl, als alles noch möglich war.' },
+  );
 
-// --- Memories --------------------------------------------------
-const memories = [
-  {
-    x: 5.5, y: 5.5, zone: 'A', collected: false,
-    text: 'Du erinnerst dich an einen Sommernachmittag. Ein Ventilator, der die warme Luft im Kreis schob. Du warst allein zuhause, und das war schön.'
-  },
-  {
-    x: 26.5, y: 5.5, zone: 'B', collected: false,
-    text: 'Flur Nr. 7C. Ein Gebäude, das es nie gab. Du warst hier oft in Träumen. Das Summen der Lampen klingt wie ein Lied, an das du dich fast erinnerst.'
-  },
-  {
-    x: 25.5, y: 25.5, zone: 'C', collected: false,
-    text: 'Das Becken war immer schon leer. Die Kacheln kalt. Du hast einmal hineingeblickt und nicht mehr hochgesehen, aus Angst, jemand würde zurückschauen.'
-  },
-  {
-    x: 5.5, y: 28.0, zone: 'D', collected: false,
-    text: 'Das Licht am Nachmittag, durch Vorhänge mit Bären drauf. Jemand rief zum Essen, aber du wolltest noch fünf Minuten. Noch fünf Minuten.'
-  },
-  {
-    x: 15.5, y: 15.5, zone: 'E', collected: false,
-    text: 'Jetzt erinnerst du dich: Das hier ist kein Traum. Du versuchst nur, dich an einen zu erinnern. An das Gefühl, als alles noch möglich war.'
-  },
+  player.x = 3.5; player.y = 3.5;
+  player.angle = Math.PI * 0.25;
+}
+
+// ============================================================
+//  LEVEL 2 — Unter dem Traum
+//  A tighter, darker "basement" underneath the dream. Narrow
+//  corridors wind around small rooms; colors are colder.
+// ============================================================
+function buildLevel2() {
+  MAP_W = 28; MAP_H = 28;
+  freshMap();
+
+  // Four corner rooms + central chamber
+  carve(2, 2, 8, 7);          // NW (player start)
+  carve(19, 2, 25, 7);        // NE
+  carve(2, 20, 8, 25);        // SW
+  carve(19, 20, 25, 25);      // SE
+  carve(12, 12, 15, 15);      // central chamber
+
+  // Outer ring of narrow corridors connecting the 4 rooms
+  carve(5, 5, 22, 5);         // top: NW -> NE at y=5
+  carve(5, 22, 22, 22);       // bottom: SW -> SE at y=22
+  carve(5, 5, 5, 22);         // left: NW -> SW at x=5
+  carve(22, 5, 22, 22);       // right: NE -> SE at x=22
+
+  // Spokes reaching into the central chamber (cross-shaped)
+  carve(13, 5, 13, 12);       // top spoke
+  carve(13, 15, 13, 22);      // bottom spoke
+  carve(5, 13, 12, 13);       // left spoke
+  carve(15, 13, 22, 13);      // right spoke
+
+  // Paint zone walls — will be mood-tinted by LEVEL_STYLES
+  paintBorder(2, 2, 8, 7, 1);
+  paintBorder(19, 2, 25, 7, 2);
+  paintBorder(2, 20, 8, 25, 3);
+  paintBorder(19, 20, 25, 25, 4);
+  paintBorder(12, 12, 15, 15, 5);
+
+  // A few pillars for atmosphere (kept away from corridors & memories)
+  map[3][3] = 1; map[6][6] = 1;
+  map[3][22] = 2; map[6][24] = 2;
+  map[23][3] = 3; map[25][6] = 3;
+  map[23][22] = 4; map[25][24] = 4;
+
+  memories.length = 0;
+  memories.push(
+    { x: 6.5, y: 3.5, collected: false,
+      text: 'Du hattest einen Hund, als du klein warst. Du hast seinen Namen vergessen. Er ist trotzdem hier, irgendwo im Schatten.' },
+    { x: 21.5, y: 3.5, collected: false,
+      text: 'Die Stimme deines Großvaters am Telefon, ganz weit weg. Du hast immer gedacht, ihr hättet Zeit. Ihr hattet nicht.' },
+    { x: 6.5, y: 24.5, collected: false,
+      text: 'Ein Brief, den du nie abgeschickt hast. Du weißt nicht mehr, was darin stand, aber du weißt noch, warum du ihn zurückgehalten hast.' },
+    { x: 21.5, y: 24.5, collected: false,
+      text: 'Der Geruch eines Zimmers, in dem du nur einmal warst. Es gehörte jemandem, den du kaum gekannt hast. Du wünschst dir, es wäre anders gewesen.' },
+    { x: 13.5, y: 13.5, collected: false,
+      text: 'Du verstehst jetzt: Das hier sind keine Erinnerungen. Das sind die Lücken dazwischen. Und die sind auch ein Teil von dir.' },
+  );
+
+  player.x = 4.5; player.y = 4.5;
+  player.angle = 0;
+}
+
+// ============================================================
+//  LEVEL 3 — Das Erwachen
+//  Small, bright, almost empty. Three final fragments.
+// ============================================================
+function buildLevel3() {
+  MAP_W = 20; MAP_H = 20;
+  freshMap();
+
+  // One big open room with a few soft dividers
+  carve(1, 1, 18, 18);
+
+  // Soft white dividers (walls inside the open room)
+  for (let y = 5; y <= 8; y++) map[y][7] = 5;
+  for (let x = 10; x <= 13; x++) map[6][x] = 5;
+  for (let y = 11; y <= 14; y++) map[y][12] = 5;
+  for (let x = 6; x <= 9; x++) map[13][x] = 5;
+
+  // Repaint the outer border as type 5 (white bone)
+  for (let x = 0; x < MAP_W; x++) { map[0][x] = 5; map[MAP_H - 1][x] = 5; }
+  for (let y = 0; y < MAP_H; y++) { map[y][0] = 5; map[y][MAP_W - 1] = 5; }
+
+  memories.length = 0;
+  memories.push(
+    { x: 3.5, y: 15.5, collected: false,
+      text: 'Akzeptanz. Nicht alles, was du verloren hast, war deins zum Behalten. Manches war nur geliehen.' },
+    { x: 16.5, y: 3.5, collected: false,
+      text: 'Loslassen. Der Nachmittag geht zu Ende. Und das ist in Ordnung — denn jeder Nachmittag geht zu Ende.' },
+    { x: 16.5, y: 16.5, collected: false,
+      text: 'Licht. Du öffnest die Augen, bevor du es merkst. Die Welt hat auf dich gewartet, leise, die ganze Zeit.' },
+  );
+
+  player.x = 3.5; player.y = 3.5;
+  player.angle = Math.PI * 0.25;
+}
+
+// --- Level loader ---------------------------------------------
+const LEVEL_BUILDERS = [buildLevel1, buildLevel2, buildLevel3];
+const LEVEL_META = [
+  { title: 'KAPITEL I · DER NACHMITTAG',
+    intro: 'Du bist eingeschlafen. Draußen ist es noch hell.' },
+  { title: 'KAPITEL II · UNTER DEM TRAUM',
+    intro: 'Du denkst, du wachst auf. Aber du fällst nur tiefer. Unter dem Traum ist noch ein Raum, und darunter noch einer.' },
+  { title: 'KAPITEL III · DAS ERWACHEN',
+    intro: 'Etwas wird heller. Du weißt jetzt, wonach du suchst.' },
 ];
+
+function loadLevel(n) {
+  currentLevel = n;
+  LEVEL_BUILDERS[n]();
+  // Reset velocity so smooth movement doesn't carry over
+  velX = 0; velY = 0;
+  // Update HUD
+  mcountEl.textContent = '0';
+  document.getElementById('mtotal').textContent = memories.length;
+  document.getElementById('chapter-hud').textContent = LEVEL_META[n].title;
+  // Rebuild floor/ceiling imagedata references for the new level
+  rebuildFloorCeilCache();
+}
 
 // --- Player ----------------------------------------------------
 const player = {
@@ -365,6 +519,7 @@ const player = {
   speed: 2.6,       // cells per second
   rotSpeed: 2.2,
 };
+let velX = 0, velY = 0;
 
 // --- Input -----------------------------------------------------
 const keys = Object.create(null);
@@ -376,6 +531,16 @@ function startGame() {
   gameStarted = true;
   titleEl.classList.add('hide');
   initAudio();
+  showChapterCard(LEVEL_META[0].title, LEVEL_META[0].intro);
+}
+
+function showChapterCard(title, text, duration = 5000) {
+  document.getElementById('chapter-title').textContent = title;
+  document.getElementById('chapter-text').textContent = text;
+  const el = document.getElementById('chapter');
+  el.classList.add('show');
+  clearTimeout(showChapterCard._t);
+  showChapterCard._t = setTimeout(() => el.classList.remove('show'), duration);
 }
 
 document.addEventListener('keydown', (e) => {
@@ -441,7 +606,18 @@ function tryCollect() {
     showStory(m.text);
     playChime();
     if (n >= memories.length) {
-      setTimeout(triggerEnd, 7500);
+      // All fragments in this chapter found — either advance to the
+      // next chapter or, on the final chapter, wake up.
+      const nextLevel = currentLevel + 1;
+      if (nextLevel < LEVEL_BUILDERS.length) {
+        setTimeout(() => {
+          showChapterCard(LEVEL_META[nextLevel].title,
+                          LEVEL_META[nextLevel].intro, 5500);
+          setTimeout(() => loadLevel(nextLevel), 2200);
+        }, 7500);
+      } else {
+        setTimeout(triggerEnd, 7500);
+      }
     }
   }
 }
@@ -669,6 +845,276 @@ textures[5] = createTexture((c, s) => {
   addNoise(c, s, 26);
 });
 
+// --- Floor / ceiling textures (one pair per chapter) ---------
+// These are sampled per-pixel by the floor caster below, so we
+// generate an ImageData for each one and extract the raw buffer
+// once. Textures are square with power-of-2 size so we can use
+// bitmask wrapping in the hot loop.
+const FC_TEX_SIZE = 64;
+function makeFCTex(drawFn) {
+  const s = FC_TEX_SIZE;
+  const cv = document.createElement('canvas');
+  cv.width = s; cv.height = s;
+  const c = cv.getContext('2d');
+  drawFn(c, s);
+  const img = c.getImageData(0, 0, s, s);
+  return { data: img.data, size: s };
+}
+
+// --- Chapter I textures: warm wooden floor, faded ceiling
+const lvl1Floor = makeFCTex((c, s) => {
+  const g = c.createLinearGradient(0, 0, 0, s);
+  g.addColorStop(0, '#6a4228');
+  g.addColorStop(1, '#54331e');
+  c.fillStyle = g;
+  c.fillRect(0, 0, s, s);
+  // Parquet plank seams
+  c.fillStyle = 'rgba(20, 10, 5, 0.85)';
+  for (let y = 0; y < s; y += 16) c.fillRect(0, y, s, 1);
+  for (let x = 0; x < s; x += 32) c.fillRect(x, 0, 1, s);
+  // Wood grain
+  c.fillStyle = 'rgba(110, 70, 40, 0.3)';
+  for (let i = 0; i < 24; i++) {
+    const y = Math.random() * s;
+    c.fillRect(0, y, s, 0.6);
+  }
+  // Warm highlight
+  const h = c.createRadialGradient(32, 20, 2, 32, 20, 38);
+  h.addColorStop(0, 'rgba(200, 150, 80, 0.18)');
+  h.addColorStop(1, 'rgba(200, 150, 80, 0)');
+  c.fillStyle = h;
+  c.fillRect(0, 0, s, s);
+  addNoise(c, s, 22);
+});
+const lvl1Ceil = makeFCTex((c, s) => {
+  const g = c.createLinearGradient(0, 0, 0, s);
+  g.addColorStop(0, '#352028');
+  g.addColorStop(1, '#281820');
+  c.fillStyle = g;
+  c.fillRect(0, 0, s, s);
+  // Faint square "ceiling tile" grid
+  c.strokeStyle = 'rgba(20, 10, 15, 0.6)';
+  c.lineWidth = 1;
+  for (let i = 0; i <= s; i += 16) {
+    c.beginPath(); c.moveTo(i, 0); c.lineTo(i, s); c.stroke();
+    c.beginPath(); c.moveTo(0, i); c.lineTo(s, i); c.stroke();
+  }
+  // Scattered stains
+  c.fillStyle = 'rgba(90, 60, 40, 0.25)';
+  for (let i = 0; i < 12; i++) {
+    c.beginPath();
+    c.arc(Math.random() * s, Math.random() * s, Math.random() * 3 + 1, 0, Math.PI * 2);
+    c.fill();
+  }
+  addNoise(c, s, 18);
+});
+
+// --- Chapter II textures: damp concrete floor, tar-black ceiling
+const lvl2Floor = makeFCTex((c, s) => {
+  c.fillStyle = '#2a2e32';
+  c.fillRect(0, 0, s, s);
+  // Rough concrete speckle
+  for (let i = 0; i < 800; i++) {
+    const v = (Math.random() * 80) | 0;
+    c.fillStyle = `rgba(${40 + v}, ${44 + v}, ${50 + v}, 1)`;
+    c.fillRect(Math.random() * s, Math.random() * s, 1, 1);
+  }
+  // Wet reflections (bluish patches)
+  for (let i = 0; i < 6; i++) {
+    const sx = Math.random() * s, sy = Math.random() * s;
+    const r = Math.random() * 8 + 4;
+    const p = c.createRadialGradient(sx, sy, 0, sx, sy, r);
+    p.addColorStop(0, 'rgba(70, 90, 120, 0.6)');
+    p.addColorStop(1, 'rgba(70, 90, 120, 0)');
+    c.fillStyle = p;
+    c.fillRect(0, 0, s, s);
+  }
+  // Cracks
+  c.strokeStyle = 'rgba(10, 10, 15, 0.8)';
+  c.lineWidth = 0.6;
+  c.beginPath(); c.moveTo(4, 10); c.lineTo(30, 28); c.lineTo(56, 20); c.stroke();
+  c.beginPath(); c.moveTo(20, 60); c.lineTo(36, 40); c.stroke();
+  addNoise(c, s, 18);
+});
+const lvl2Ceil = makeFCTex((c, s) => {
+  c.fillStyle = '#0a0a10';
+  c.fillRect(0, 0, s, s);
+  // Dripping tar streaks
+  c.fillStyle = 'rgba(20, 15, 25, 0.8)';
+  for (let i = 0; i < 12; i++) {
+    const x = Math.random() * s;
+    c.fillRect(x, 0, 1.5, Math.random() * s);
+  }
+  // Faint rot patches
+  for (let i = 0; i < 5; i++) {
+    const p = c.createRadialGradient(Math.random() * s, Math.random() * s, 1,
+                                      Math.random() * s, Math.random() * s, 14);
+    p.addColorStop(0, 'rgba(60, 40, 50, 0.4)');
+    p.addColorStop(1, 'rgba(60, 40, 50, 0)');
+    c.fillStyle = p;
+    c.fillRect(0, 0, s, s);
+  }
+  addNoise(c, s, 14);
+});
+
+// --- Chapter III textures: pale wood floor, bright sky ceiling
+const lvl3Floor = makeFCTex((c, s) => {
+  const g = c.createLinearGradient(0, 0, 0, s);
+  g.addColorStop(0, '#e8dcc2');
+  g.addColorStop(1, '#d6c8a8');
+  c.fillStyle = g;
+  c.fillRect(0, 0, s, s);
+  c.fillStyle = 'rgba(150, 120, 80, 0.35)';
+  for (let y = 0; y < s; y += 16) c.fillRect(0, y, s, 1);
+  for (let x = 0; x < s; x += 24) c.fillRect(x, 0, 1, s);
+  c.fillStyle = 'rgba(200, 160, 100, 0.2)';
+  for (let i = 0; i < 30; i++) {
+    const y = Math.random() * s;
+    c.fillRect(0, y, s, 0.5);
+  }
+  addNoise(c, s, 18);
+});
+const lvl3Ceil = makeFCTex((c, s) => {
+  const g = c.createLinearGradient(0, 0, 0, s);
+  g.addColorStop(0, '#f5f1e8');
+  g.addColorStop(1, '#e8e0d0');
+  c.fillStyle = g;
+  c.fillRect(0, 0, s, s);
+  // Soft sunlight rays
+  c.fillStyle = 'rgba(255, 230, 170, 0.18)';
+  for (let i = 0; i < 8; i++) {
+    c.fillRect(Math.random() * s, 0, Math.random() * 4 + 1, s);
+  }
+  addNoise(c, s, 10);
+});
+
+// --- Per-level palette / tint configuration ------------------
+// Wall tints are composited on top of the texture strips to give
+// each level a distinctive mood. Fog color also changes.
+const LEVEL_STYLES = [
+  {
+    floorTex: lvl1Floor, ceilTex: lvl1Ceil,
+    wallTint: null,                        // no overlay
+    fogColor: [0, 0, 0],
+    fogNear: 0.5, fogFar: 11,
+    miniWall: [230, 170, 210],             // pink palette for minimap
+  },
+  {
+    floorTex: lvl2Floor, ceilTex: lvl2Ceil,
+    wallTint: 'rgba(10, 20, 35, 0.45)',    // dark bluish tint
+    fogColor: [6, 10, 18],
+    fogNear: 0.3, fogFar: 7,
+    miniWall: [80, 110, 130],              // cold bluish-grey
+  },
+  {
+    floorTex: lvl3Floor, ceilTex: lvl3Ceil,
+    wallTint: 'rgba(255, 240, 210, 0.18)', // warm bright wash
+    fogColor: [235, 225, 200],
+    fogNear: 1.0, fogFar: 14,
+    miniWall: [240, 225, 195],             // cream
+  },
+];
+
+// --- Floor caster (per-pixel ray marching for the ground/sky)
+// Rendered at half resolution onto an offscreen canvas, then
+// drawImage-scaled onto the main canvas — cheap enough for 60 fps
+// and looks soft/dreamy when upscaled.
+const FC_SCALE = 2;
+const FC_W = (W / FC_SCALE) | 0;
+const FC_H = (H / FC_SCALE) | 0;
+const fcCanvas = document.createElement('canvas');
+fcCanvas.width = FC_W; fcCanvas.height = FC_H;
+const fcCtx = fcCanvas.getContext('2d');
+const fcImg = fcCtx.createImageData(FC_W, FC_H);
+const fcPx = fcImg.data;
+
+// Populated by loadLevel via rebuildFloorCeilCache
+let activeFloorTex = lvl1Floor;
+let activeCeilTex  = lvl1Ceil;
+function rebuildFloorCeilCache() {
+  const style = LEVEL_STYLES[currentLevel] || LEVEL_STYLES[0];
+  activeFloorTex = style.floorTex;
+  activeCeilTex  = style.ceilTex;
+}
+
+function renderFloorCeiling(camOffY) {
+  const horizon = FC_H / 2 + (camOffY / FC_SCALE);
+  const posZ = 0.5 * FC_H;
+
+  const halfFov = FOV / 2;
+  const dx0 = Math.cos(player.angle - halfFov);
+  const dy0 = Math.sin(player.angle - halfFov);
+  const dx1 = Math.cos(player.angle + halfFov);
+  const dy1 = Math.sin(player.angle + halfFov);
+
+  const fTex = activeFloorTex.data;
+  const cTex = activeCeilTex.data;
+  const TS = FC_TEX_SIZE;
+  const TSM = TS - 1;                          // 63, power-of-two mask
+
+  const style = LEVEL_STYLES[currentLevel] || LEVEL_STYLES[0];
+  const fogR = style.fogColor[0];
+  const fogG = style.fogColor[1];
+  const fogB = style.fogColor[2];
+  const fogNear = style.fogNear;
+  const fogFar  = style.fogFar;
+
+  for (let y = 0; y < FC_H; y++) {
+    const isFloor = y > horizon;
+    const p = isFloor ? (y - horizon) : (horizon - y);
+
+    const rowOff = y * FC_W * 4;
+
+    if (p < 0.8) {
+      // Skip rows right at the horizon — fill with pure fog color
+      for (let x = 0; x < FC_W; x++) {
+        const o = rowOff + x * 4;
+        fcPx[o] = fogR; fcPx[o + 1] = fogG; fcPx[o + 2] = fogB; fcPx[o + 3] = 255;
+      }
+      continue;
+    }
+
+    const rowDistance = posZ / p;
+
+    const stepX = rowDistance * (dx1 - dx0) / FC_W;
+    const stepY = rowDistance * (dy1 - dy0) / FC_W;
+    let fx = player.x + rowDistance * dx0;
+    let fy = player.y + rowDistance * dy0;
+
+    // Distance fog for this row
+    let fog = (rowDistance - fogNear) / (fogFar - fogNear);
+    if (fog < 0) fog = 0; else if (fog > 1) fog = 1;
+    const invFog = 1 - fog;
+    const fR = fogR * fog;
+    const fG = fogG * fog;
+    const fB = fogB * fog;
+
+    const tex = isFloor ? fTex : cTex;
+
+    for (let x = 0; x < FC_W; x++) {
+      // Wrap fx/fy to [0, 1) then scale to texture
+      const u = fx - (fx | 0) + (fx < 0 ? 1 : 0);
+      const v = fy - (fy | 0) + (fy < 0 ? 1 : 0);
+      const tx = (u * TS) & TSM;
+      const ty = (v * TS) & TSM;
+      const ti = (ty * TS + tx) << 2;
+
+      const o = rowOff + x * 4;
+      fcPx[o]     = tex[ti]     * invFog + fR;
+      fcPx[o + 1] = tex[ti + 1] * invFog + fG;
+      fcPx[o + 2] = tex[ti + 2] * invFog + fB;
+      fcPx[o + 3] = 255;
+
+      fx += stepX;
+      fy += stepY;
+    }
+  }
+
+  fcCtx.putImageData(fcImg, 0, 0);
+  // Draw scaled up to the main canvas
+  ctx.drawImage(fcCanvas, 0, 0, W, H);
+}
+
 // --- Raycaster -------------------------------------------------
 const FOV = Math.PI / 3;   // 60° — more intimate, less distorted
 const zBuffer = new Array(W);
@@ -715,10 +1161,6 @@ function castRay(angle) {
 }
 
 function renderWorld() {
-  // Ceiling/floor tinted by the zone currently surrounding the player
-  const zone = currentZoneType();
-  const tint = zoneTints[zone] || zoneTints[0];
-
   // Head bob (sinusoidal vertical shift when walking) + idle breathing
   const t = performance.now();
   const bobY = isMoving ? Math.sin(bobPhase) * 4 : 0;
@@ -730,19 +1172,16 @@ function renderWorld() {
 
   const horizon = H / 2 + voffset;
 
-  // Ceiling
-  const ceilGrad = ctx.createLinearGradient(0, 0, 0, horizon);
-  ceilGrad.addColorStop(0, '#000');
-  ceilGrad.addColorStop(1, tint.ceil);
-  ctx.fillStyle = ceilGrad;
-  ctx.fillRect(0, 0, W, horizon);
+  // Per-pixel textured floor + ceiling (half-res offscreen, upscaled)
+  renderFloorCeiling(voffset);
 
-  // Floor
-  const floorGrad = ctx.createLinearGradient(0, horizon, 0, H);
-  floorGrad.addColorStop(0, tint.floor);
-  floorGrad.addColorStop(1, '#000');
-  ctx.fillStyle = floorGrad;
-  ctx.fillRect(0, horizon, W, H - horizon);
+  const style = LEVEL_STYLES[currentLevel] || LEVEL_STYLES[0];
+  const fogNear = style.fogNear;
+  const fogFar  = style.fogFar;
+  const fogR = style.fogColor[0];
+  const fogG = style.fogColor[1];
+  const fogB = style.fogColor[2];
+  const fogStr = `rgb(${fogR},${fogG},${fogB})`;
 
   // Cast one textured strip per pixel column
   for (let i = 0; i < W; i++) {
@@ -760,20 +1199,28 @@ function renderWorld() {
     if (texX < 0) texX = 0;
     if (texX >= texW) texX = texW - 1;
 
+    const sx = i + bobX;
     // Blit a 1px-wide column of the texture, stretched to lineH
-    ctx.drawImage(tex, texX, 0, 1, tex.height, i + bobX, drawStart, 1, lineH);
+    ctx.drawImage(tex, texX, 0, 1, tex.height, sx, drawStart, 1, lineH);
 
-    // Side-face shading for a sense of depth
+    // Side-face shading
     if (side === 1) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
-      ctx.fillRect(i + bobX, drawStart, 1, lineH);
+      ctx.fillRect(sx, drawStart, 1, lineH);
     }
 
-    // Distance fog — blend wall toward black
-    const fog = Math.max(0, Math.min(1, (corrected - 0.5) / 10));
+    // Per-level wall tint (mood overlay)
+    if (style.wallTint) {
+      ctx.fillStyle = style.wallTint;
+      ctx.fillRect(sx, drawStart, 1, lineH);
+    }
+
+    // Distance fog — blend wall toward fog color
+    let fog = (corrected - fogNear) / (fogFar - fogNear);
+    if (fog < 0) fog = 0; else if (fog > 1) fog = 1;
     if (fog > 0) {
-      ctx.fillStyle = `rgba(0, 0, 0, ${fog * 0.88})`;
-      ctx.fillRect(i + bobX, drawStart, 1, lineH);
+      ctx.fillStyle = `rgba(${fogR}, ${fogG}, ${fogB}, ${fog * 0.9})`;
+      ctx.fillRect(sx, drawStart, 1, lineH);
     }
   }
 }
@@ -835,16 +1282,19 @@ function renderCrosshair() {
 }
 
 function renderMinimap() {
-  const s = 5; // pixels per cell
+  // Fit the current map into the 160×160 widget
+  const s = Math.max(1, Math.floor(Math.min(160 / MAP_W, 160 / MAP_H)));
+  const offX = (160 - s * MAP_W) / 2;
+  const offY = (160 - s * MAP_H) / 2;
   miniCtx.fillStyle = 'rgba(5, 0, 15, 0.75)';
   miniCtx.fillRect(0, 0, 160, 160);
+  const style = LEVEL_STYLES[currentLevel] || LEVEL_STYLES[0];
+  const mw = style.miniWall;
+  miniCtx.fillStyle = `rgba(${mw[0]},${mw[1]},${mw[2]},0.72)`;
   for (let y = 0; y < MAP_H; y++) {
     for (let x = 0; x < MAP_W; x++) {
-      const t = map[y][x];
-      if (t > 0) {
-        const c = wallColors[t] || wallColors[1];
-        miniCtx.fillStyle = `rgba(${c.light[0]},${c.light[1]},${c.light[2]},0.7)`;
-        miniCtx.fillRect(x * s, y * s, s, s);
+      if (map[y][x] > 0) {
+        miniCtx.fillRect(offX + x * s, offY + y * s, s, s);
       }
     }
   }
@@ -852,21 +1302,19 @@ function renderMinimap() {
   for (const m of memories) {
     if (m.collected) continue;
     miniCtx.fillStyle = '#fff';
-    miniCtx.fillRect(m.x * s - 1, m.y * s - 1, 2, 2);
+    miniCtx.fillRect(offX + m.x * s - 1, offY + m.y * s - 1, 2, 2);
   }
   // Player
+  const px = offX + player.x * s;
+  const py = offY + player.y * s;
   miniCtx.fillStyle = '#ff9be0';
   miniCtx.beginPath();
-  miniCtx.arc(player.x * s, player.y * s, 2, 0, Math.PI * 2);
+  miniCtx.arc(px, py, 2, 0, Math.PI * 2);
   miniCtx.fill();
-  // Facing line
   miniCtx.strokeStyle = '#ff9be0';
   miniCtx.beginPath();
-  miniCtx.moveTo(player.x * s, player.y * s);
-  miniCtx.lineTo(
-    player.x * s + Math.cos(player.angle) * 6,
-    player.y * s + Math.sin(player.angle) * 6
-  );
+  miniCtx.moveTo(px, py);
+  miniCtx.lineTo(px + Math.cos(player.angle) * 6, py + Math.sin(player.angle) * 6);
   miniCtx.stroke();
 }
 
@@ -1034,19 +1482,28 @@ function loop(now) {
     // Rotation (keyboard)
     if (keys['ArrowLeft'])  player.angle -= player.rotSpeed * dt;
     if (keys['ArrowRight']) player.angle += player.rotSpeed * dt;
-    // Movement
+    // Desired movement direction
     let dx = 0, dy = 0;
-    if (keys['KeyW'] || keys['ArrowUp'])    { dx += Math.cos(player.angle); dy += Math.sin(player.angle); }
-    if (keys['KeyS'] || keys['ArrowDown'])  { dx -= Math.cos(player.angle); dy -= Math.sin(player.angle); }
+    if (keys['KeyW'] || keys['ArrowUp'])   { dx += Math.cos(player.angle); dy += Math.sin(player.angle); }
+    if (keys['KeyS'] || keys['ArrowDown']) { dx -= Math.cos(player.angle); dy -= Math.sin(player.angle); }
     if (keys['KeyA']) { dx += Math.cos(player.angle - Math.PI / 2); dy += Math.sin(player.angle - Math.PI / 2); }
     if (keys['KeyD']) { dx += Math.cos(player.angle + Math.PI / 2); dy += Math.sin(player.angle + Math.PI / 2); }
     const mag = Math.hypot(dx, dy);
+    // Smooth acceleration / deceleration toward the target velocity
+    let tvx = 0, tvy = 0;
     if (mag > 0) {
+      tvx = dx / mag * player.speed;
+      tvy = dy / mag * player.speed;
+    }
+    const lerp = Math.min(1, 9 * dt);
+    velX += (tvx - velX) * lerp;
+    velY += (tvy - velY) * lerp;
+    // Clamp tiny velocities so idle is rock-still
+    if (Math.abs(velX) < 0.01 && Math.abs(velY) < 0.01) { velX = 0; velY = 0; }
+
+    if (velX !== 0 || velY !== 0) {
       const prevX = player.x, prevY = player.y;
-      dx = dx / mag * player.speed * dt;
-      dy = dy / mag * player.speed * dt;
-      tryMove(player.x + dx, player.y + dy);
-      // Actual distance walked (collisions may reduce it)
+      tryMove(player.x + velX * dt, player.y + velY * dt);
       const walked = Math.hypot(player.x - prevX, player.y - prevY);
       if (walked > 0.0005) {
         isMoving = true;
@@ -1056,6 +1513,9 @@ function loop(now) {
           stepAccum = 0;
           playFootstep();
         }
+      } else {
+        // Ran into a wall — kill velocity so we don't stick to it
+        velX = 0; velY = 0;
       }
     }
   }
@@ -1077,6 +1537,10 @@ function loop(now) {
 
   requestAnimationFrame(loop);
 }
+
+// Prime level 1 so the render loop has valid state even before the
+// player dismisses the title screen.
+loadLevel(0);
 requestAnimationFrame(loop);
 </script>
 </body>
