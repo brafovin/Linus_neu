@@ -202,6 +202,51 @@
     font-size: 1.05rem;
   }
   #end .hint { margin-top: 2rem; opacity: 0.5; font-size: 0.85rem; }
+  #battle-hud {
+    position: absolute;
+    top: 6%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 60%;
+    max-width: 420px;
+    text-align: center;
+    pointer-events: none;
+    display: none;
+  }
+  #battle-hud.show { display: block; }
+  #battle-hud .boss-label {
+    color: rgba(255, 180, 200, 0.85);
+    letter-spacing: 0.25rem;
+    font-size: 0.85rem;
+    margin-bottom: 0.35rem;
+    text-shadow: 0 0 12px rgba(200, 30, 60, 0.9);
+  }
+  #battle-hud .boss-bar {
+    width: 100%;
+    height: 8px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 120, 140, 0.5);
+  }
+  #battle-hud .boss-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ff3050, #9020c0);
+    width: 100%;
+    transition: width 0.35s;
+  }
+  #burst-flash {
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 245, 0);
+    pointer-events: none;
+    transition: background 0.15s;
+  }
+  #damage-fade {
+    position: absolute;
+    inset: 0;
+    box-shadow: inset 0 0 200px 60px rgba(120, 0, 20, 0);
+    pointer-events: none;
+    transition: box-shadow 0.2s;
+  }
   #chapter {
     position: absolute;
     inset: 0;
@@ -252,6 +297,12 @@
     <h2 id="chapter-title"></h2>
     <p id="chapter-text"></p>
   </div>
+  <div id="battle-hud">
+    <div class="boss-label">DER SCHATTEN</div>
+    <div class="boss-bar"><div class="boss-fill" id="boss-fill"></div></div>
+  </div>
+  <div id="burst-flash"></div>
+  <div id="damage-fade"></div>
   <div id="title">
     <h1>TRAUMKERN</h1>
     <p>Du bist eingeschlafen. Aber etwas ist anders.</p>
@@ -481,15 +532,198 @@ function buildLevel3() {
     { x: 16.5, y: 3.5, collected: false,
       text: 'Loslassen. Der Nachmittag geht zu Ende. Und das ist in Ordnung — denn jeder Nachmittag geht zu Ende.' },
     { x: 16.5, y: 16.5, collected: false,
-      text: 'Licht. Du öffnest die Augen, bevor du es merkst. Die Welt hat auf dich gewartet, leise, die ganze Zeit.' },
+      text: 'Licht. Du versuchst, die Augen zu öffnen. Sie öffnen sich — aber das Licht ist härter, als du gedacht hast.' },
   );
 
   player.x = 3.5; player.y = 3.5;
   player.angle = Math.PI * 0.25;
 }
 
+// ============================================================
+//  LEVEL 4 — Krankenhaus (4 Etagen)
+//  Dispatches to one of four hospital-floor sub-builders based on
+//  `hospitalFloor`. Each floor has exactly one memory fragment.
+// ============================================================
+let hospitalFloor = 0;
+const HOSPITAL_FLOOR_META = [
+  { title: 'ERDGESCHOSS · EMPFANG',
+    intro: 'Die Decke ist weiß. Irgendwo piepst ein Monitor. Du bist wach. Aber du bist nicht zuhause.' },
+  { title: 'STOCK 2 · PATIENTENZIMMER',
+    intro: 'Der Fahrstuhl hält mit einem weichen Ton. Die Türen öffnen sich in einen Flur, der nach nichts riecht.' },
+  { title: 'STOCK 3 · OPERATIONSSAAL',
+    intro: 'Die Lampen oben sind zu grell. Du kneifst die Augen zusammen und gehst weiter.' },
+  { title: 'UNTERGESCHOSS · ARCHIV',
+    intro: 'Der Fahrstuhl fährt nach unten, obwohl du keinen Knopf gedrückt hast. Unten ist es sehr still.' },
+];
+
+function buildLevel4() {
+  if (hospitalFloor === 0) buildHospitalFloor1();
+  else if (hospitalFloor === 1) buildHospitalFloor2();
+  else if (hospitalFloor === 2) buildHospitalFloor3();
+  else buildHospitalFloor4();
+}
+
+// --- Hospital floor 1: Empfang (reception hall) ---------------
+function buildHospitalFloor1() {
+  MAP_W = 20; MAP_H = 20;
+  freshMap();
+  carve(1, 1, 18, 18);
+  paintBorder(1, 1, 18, 18, 5);
+
+  // Reception desk — horizontal block with a small gap
+  for (let x = 5; x <= 12; x++) map[4][x] = 5;
+  for (let x = 5; x <= 12; x++) map[5][x] = 5;
+  map[4][8] = 0; map[5][8] = 0;  // walkway into the desk area
+
+  // Two rows of waiting-room chairs (cushion = type 1 pink)
+  for (let x of [3, 6, 9, 12, 15]) { map[9][x]  = 1; }
+  for (let x of [3, 6, 9, 12, 15]) { map[12][x] = 1; }
+
+  // A small side office
+  for (let x = 15; x <= 17; x++) { map[14][x] = 5; map[17][x] = 5; }
+  for (let y = 14; y <= 17; y++) { map[y][15] = 5; map[y][17] = 5; }
+  map[17][16] = 0;  // door
+
+  memories.length = 0;
+  memories.push({
+    x: 8.5, y: 4.5, collected: false,
+    text: 'Du erkennst niemanden in der Wartezone. Jeder hat Besuch — nur du nicht. Und doch sitzen sie alle da, als würden sie auf dich warten.',
+  });
+
+  player.x = 9.5; player.y = 17.5;
+  player.angle = -Math.PI / 2;   // facing north
+}
+
+// --- Hospital floor 2: Patientenzimmer ------------------------
+function buildHospitalFloor2() {
+  MAP_W = 20; MAP_H = 20;
+  freshMap();
+  // Central EW corridor with 4 patient rooms to the north
+  carve(1, 8, 18, 11);                     // corridor
+  // Four patient rooms
+  carve(2, 2, 5, 7);                       // room 1
+  carve(7, 2, 10, 7);                      // room 2
+  carve(12, 2, 15, 7);                     // room 3
+  carve(16, 2, 18, 7);                     // room 4 (smaller)
+  // Doorways from corridor into rooms
+  map[7][3] = 0; map[8][3] = 0;
+  map[7][9] = 0; map[8][9] = 0;
+  map[7][13] = 0; map[8][13] = 0;
+  map[7][17] = 0; map[8][17] = 0;
+
+  // A small south lobby near the elevator (spawn)
+  carve(8, 12, 12, 17);
+  map[12][10] = 0; map[11][10] = 0;  // connect corridor to lobby
+
+  paintBorder(1, 8, 18, 11, 5);
+  paintBorder(2, 2, 5, 7, 5);
+  paintBorder(7, 2, 10, 7, 5);
+  paintBorder(12, 2, 15, 7, 5);
+  paintBorder(16, 2, 18, 7, 5);
+  paintBorder(8, 12, 12, 17, 5);
+
+  // Beds as obstacles (type 4 red to feel "hospital red")
+  map[4][2] = 4; map[4][3] = 4;
+  map[4][8] = 4; map[4][9] = 4;
+  map[4][13] = 4; map[4][14] = 4;
+  map[4][17] = 4;
+
+  memories.length = 0;
+  memories.push({
+    x: 13.5, y: 5.5, collected: false,
+    text: 'Zimmer 207. Das war deins. Du weißt es, weil deine Sachen auf dem Nachttisch liegen. Aber du erinnerst dich nicht, sie dort hingelegt zu haben.',
+  });
+
+  player.x = 10.5; player.y = 16.5;
+  player.angle = -Math.PI / 2;
+}
+
+// --- Hospital floor 3: Operationssaal -------------------------
+function buildHospitalFloor3() {
+  MAP_W = 18; MAP_H = 18;
+  freshMap();
+  carve(1, 1, 16, 16);
+  paintBorder(1, 1, 16, 16, 5);
+
+  // Central operating table — a small cluster of walls in the middle
+  map[8][8] = 3; map[8][9] = 3;
+  map[9][8] = 3; map[9][9] = 3;
+
+  // Corner supply closets
+  for (let y = 1; y <= 4; y++) { map[y][4] = 5; }
+  for (let x = 1; x <= 4; x++) { map[4][x] = 5; }
+  map[4][4] = 0;  // closet door
+
+  for (let y = 1; y <= 4; y++) { map[y][12] = 5; }
+  for (let x = 12; x <= 16; x++) { map[4][x] = 5; }
+  map[4][12] = 0;
+
+  for (let y = 12; y <= 16; y++) { map[y][4] = 5; }
+  for (let x = 1; x <= 4; x++) { map[12][x] = 5; }
+  map[12][4] = 0;
+
+  memories.length = 0;
+  memories.push({
+    x: 8.5, y: 10.5, collected: false,
+    text: 'Jemand hat dich hier behandelt. Jemand hat sich um dich gekümmert, auch als du es nicht mitbekommen hast. Das ist die Erinnerung, die am meisten weh tut.',
+  });
+
+  player.x = 8.5; player.y = 15.5;
+  player.angle = -Math.PI / 2;
+}
+
+// --- Hospital floor 4: Archiv / Leichenhalle ------------------
+function buildHospitalFloor4() {
+  MAP_W = 16; MAP_H = 22;
+  freshMap();
+  carve(1, 1, 14, 20);
+  paintBorder(1, 1, 14, 20, 2);  // yellow-ish rotting walls
+
+  // Rows of drawers — pillars on both sides of a central aisle
+  for (let y = 4; y <= 18; y += 3) {
+    map[y][3] = 2; map[y][4] = 2;
+    map[y][10] = 2; map[y][11] = 2;
+  }
+  // Heavier inner walls near the end of the room
+  for (let x = 5; x <= 9; x++) map[3][x] = 2;
+  map[3][7] = 0;  // gateway
+
+  memories.length = 0;
+  memories.push({
+    x: 7.5, y: 2.5, collected: false,
+    text: 'Die Schublade mit deinem Namen ist leer. Aber daneben ist eine, an der niemand mehr vorbeigeht. Du wolltest ihn nie verabschieden.',
+  });
+
+  player.x = 7.5; player.y = 19.5;
+  player.angle = -Math.PI / 2;
+}
+
+// ============================================================
+//  LEVEL 5 — Der Schatten (boss arena)
+//  A dark square arena with a boss that drifts toward the player.
+//  The player defeats the boss by shooting light-bursts (E key)
+//  when facing it. No lose state — contact just darkens the view.
+// ============================================================
+function buildLevel5() {
+  MAP_W = 18; MAP_H = 18;
+  freshMap();
+  carve(1, 1, 16, 16);
+  paintBorder(1, 1, 16, 16, 4);
+
+  // Four asymmetric pillars for cover
+  map[5][5] = 4; map[5][12] = 4;
+  map[12][5] = 4; map[12][12] = 4;
+
+  memories.length = 0; // no fragments on this level — the boss *is* the goal
+
+  player.x = 8.5; player.y = 15.5;
+  player.angle = -Math.PI / 2;
+
+  spawnBoss(8.5, 2.5);
+}
+
 // --- Level loader ---------------------------------------------
-const LEVEL_BUILDERS = [buildLevel1, buildLevel2, buildLevel3];
+const LEVEL_BUILDERS = [buildLevel1, buildLevel2, buildLevel3, buildLevel4, buildLevel5];
 const LEVEL_META = [
   { title: 'KAPITEL I · DER NACHMITTAG',
     intro: 'Du bist eingeschlafen. Draußen ist es noch hell.' },
@@ -497,17 +731,30 @@ const LEVEL_META = [
     intro: 'Du denkst, du wachst auf. Aber du fällst nur tiefer. Unter dem Traum ist noch ein Raum, und darunter noch einer.' },
   { title: 'KAPITEL III · DAS ERWACHEN',
     intro: 'Etwas wird heller. Du weißt jetzt, wonach du suchst.' },
+  { title: 'KAPITEL IV · DAS KRANKENHAUS',
+    intro: 'Das Licht war nicht Sonnenlicht. Es waren Leuchtstoffröhren. Du bist in einem Gebäude, in dem du schon lange liegst.' },
+  { title: 'KAPITEL V · DER SCHATTEN',
+    intro: 'Etwas hat dich die ganze Zeit zurückgehalten. Jetzt siehst du es zum ersten Mal. Drücke E, um Licht zu werfen.' },
 ];
 
 function loadLevel(n) {
   currentLevel = n;
+  if (n !== 4) { boss = null; } // clear boss outside the arena
+  if (n !== 3) { hospitalFloor = 0; }
   LEVEL_BUILDERS[n]();
   // Reset velocity so smooth movement doesn't carry over
   velX = 0; velY = 0;
   // Update HUD
   mcountEl.textContent = '0';
   document.getElementById('mtotal').textContent = memories.length;
-  document.getElementById('chapter-hud').textContent = LEVEL_META[n].title;
+  // Hospital floors use their own label in the HUD; the boss fight
+  // shows its own header.
+  let hudLabel = LEVEL_META[n].title;
+  if (n === 3) hudLabel = 'IV · ' + HOSPITAL_FLOOR_META[hospitalFloor].title;
+  document.getElementById('chapter-hud').textContent = hudLabel;
+  // Boss HUD visibility
+  const bhEl = document.getElementById('battle-hud');
+  if (bhEl) bhEl.classList.toggle('show', n === 4);
   // Rebuild floor/ceiling imagedata references for the new level
   rebuildFloorCeilCache();
 }
@@ -520,6 +767,13 @@ const player = {
   rotSpeed: 2.2,
 };
 let velX = 0, velY = 0;
+
+// Boss entity — null outside the boss fight. See spawnBoss/updateBoss below.
+let boss = null;
+let bossPhase = 0;
+let lightBurstCooldown = 0;
+let lightBurstFlash = 0;
+let bossDamageFade = 0;    // screen redden while boss is touching player
 
 // --- Input -----------------------------------------------------
 const keys = Object.create(null);
@@ -598,6 +852,11 @@ function nearestUncollected() {
   return { m: best, d: bestD };
 }
 function tryCollect() {
+  // In the boss arena, E is the light-burst attack.
+  if (currentLevel === 4) {
+    tryLightBurst();
+    return;
+  }
   const { m, d } = nearestUncollected();
   if (m && d < 0.9) {
     m.collected = true;
@@ -606,13 +865,31 @@ function tryCollect() {
     showStory(m.text);
     playChime();
     if (n >= memories.length) {
-      // All fragments in this chapter found — either advance to the
-      // next chapter or, on the final chapter, wake up.
+      // Chapter IV: advance through the hospital floors before
+      // crossing into the next chapter.
+      if (currentLevel === 3 && hospitalFloor < 3) {
+        setTimeout(() => {
+          hospitalFloor += 1;
+          showChapterCard('KAPITEL IV · ' + HOSPITAL_FLOOR_META[hospitalFloor].title,
+                          HOSPITAL_FLOOR_META[hospitalFloor].intro, 5000);
+          setTimeout(() => loadLevel(3), 2000);
+        }, 7500);
+        return;
+      }
+      // Otherwise: advance to the next chapter or the ending.
       const nextLevel = currentLevel + 1;
       if (nextLevel < LEVEL_BUILDERS.length) {
         setTimeout(() => {
-          showChapterCard(LEVEL_META[nextLevel].title,
-                          LEVEL_META[nextLevel].intro, 5500);
+          const nextMeta = LEVEL_META[nextLevel];
+          let nextIntro = nextMeta.intro;
+          let nextTitle = nextMeta.title;
+          // When entering the hospital, also show its floor-1 intro.
+          if (nextLevel === 3) {
+            hospitalFloor = 0;
+            nextTitle = 'KAPITEL IV · ' + HOSPITAL_FLOOR_META[0].title;
+            nextIntro = HOSPITAL_FLOOR_META[0].intro;
+          }
+          showChapterCard(nextTitle, nextIntro, 5500);
           setTimeout(() => loadLevel(nextLevel), 2200);
         }, 7500);
       } else {
@@ -988,6 +1265,93 @@ const lvl3Ceil = makeFCTex((c, s) => {
   addNoise(c, s, 10);
 });
 
+// --- Chapter IV textures: pale clinical tile, fluorescent ceiling
+const lvl4Floor = makeFCTex((c, s) => {
+  // Pale green-grey linoleum tiles
+  c.fillStyle = '#b8c4b0';
+  c.fillRect(0, 0, s, s);
+  // Tile grid
+  c.strokeStyle = 'rgba(60, 80, 60, 0.6)';
+  c.lineWidth = 1;
+  for (let i = 0; i <= s; i += 16) {
+    c.beginPath(); c.moveTo(i, 0); c.lineTo(i, s); c.stroke();
+    c.beginPath(); c.moveTo(0, i); c.lineTo(s, i); c.stroke();
+  }
+  // Per-tile variation + dirt patches
+  for (let ty = 0; ty < s; ty += 16) {
+    for (let tx = 0; tx < s; tx += 16) {
+      const v = (Math.random() - 0.5) * 40;
+      c.fillStyle = `rgba(${180 + v}, ${196 + v}, ${176 + v}, 0.4)`;
+      c.fillRect(tx + 1, ty + 1, 14, 14);
+    }
+  }
+  // Scuff marks
+  c.strokeStyle = 'rgba(40, 50, 40, 0.3)';
+  c.lineWidth = 0.6;
+  for (let i = 0; i < 6; i++) {
+    c.beginPath();
+    c.moveTo(Math.random() * s, Math.random() * s);
+    c.lineTo(Math.random() * s, Math.random() * s);
+    c.stroke();
+  }
+  addNoise(c, s, 16);
+});
+const lvl4Ceil = makeFCTex((c, s) => {
+  // Acoustic ceiling tiles with fluorescent fixtures
+  c.fillStyle = '#dad8ce';
+  c.fillRect(0, 0, s, s);
+  // Grid lines (tile separators)
+  c.strokeStyle = 'rgba(90, 90, 80, 0.8)';
+  c.lineWidth = 1;
+  for (let i = 0; i <= s; i += 32) {
+    c.beginPath(); c.moveTo(i, 0); c.lineTo(i, s); c.stroke();
+    c.beginPath(); c.moveTo(0, i); c.lineTo(s, i); c.stroke();
+  }
+  // Perforation dots (acoustic tiles)
+  c.fillStyle = 'rgba(60, 60, 55, 0.5)';
+  for (let y = 4; y < s; y += 6) {
+    for (let x = 4; x < s; x += 6) {
+      c.fillRect(x, y, 1, 1);
+    }
+  }
+  // A single bright fluorescent bar
+  const bar = c.createLinearGradient(0, 14, 0, 18);
+  bar.addColorStop(0, 'rgba(255, 255, 240, 0)');
+  bar.addColorStop(0.5, 'rgba(255, 255, 240, 0.95)');
+  bar.addColorStop(1, 'rgba(255, 255, 240, 0)');
+  c.fillStyle = bar;
+  c.fillRect(8, 14, s - 16, 4);
+  addNoise(c, s, 14);
+});
+
+// --- Chapter V textures: blood-red stone, pitch-black ceiling
+const lvl5Floor = makeFCTex((c, s) => {
+  c.fillStyle = '#2a0a0a';
+  c.fillRect(0, 0, s, s);
+  // Rough stone speckle with a dark red bias
+  for (let i = 0; i < 900; i++) {
+    const v = (Math.random() * 40) | 0;
+    c.fillStyle = `rgba(${60 + v}, ${10 + v * 0.3}, ${10 + v * 0.3}, 1)`;
+    c.fillRect(Math.random() * s, Math.random() * s, 1, 1);
+  }
+  // Dark cracks radiating outward
+  c.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+  c.lineWidth = 0.8;
+  for (let i = 0; i < 5; i++) {
+    const sx = Math.random() * s, sy = Math.random() * s;
+    c.beginPath();
+    c.moveTo(sx, sy);
+    c.lineTo(sx + (Math.random() - 0.5) * 20, sy + (Math.random() - 0.5) * 20);
+    c.stroke();
+  }
+  addNoise(c, s, 22);
+});
+const lvl5Ceil = makeFCTex((c, s) => {
+  c.fillStyle = '#020002';
+  c.fillRect(0, 0, s, s);
+  addNoise(c, s, 8);
+});
+
 // --- Per-level palette / tint configuration ------------------
 // Wall tints are composited on top of the texture strips to give
 // each level a distinctive mood. Fog color also changes.
@@ -1012,6 +1376,20 @@ const LEVEL_STYLES = [
     fogColor: [235, 225, 200],
     fogNear: 1.0, fogFar: 14,
     miniWall: [240, 225, 195],             // cream
+  },
+  {
+    floorTex: lvl4Floor, ceilTex: lvl4Ceil,
+    wallTint: 'rgba(210, 230, 215, 0.15)', // clinical pale-green wash
+    fogColor: [40, 55, 48],
+    fogNear: 0.8, fogFar: 10,
+    miniWall: [190, 210, 195],
+  },
+  {
+    floorTex: lvl5Floor, ceilTex: lvl5Ceil,
+    wallTint: 'rgba(40, 0, 0, 0.55)',      // heavy red-black for the arena
+    fogColor: [20, 2, 4],
+    fogNear: 0.2, fogFar: 6,
+    miniWall: [140, 40, 50],
   },
 ];
 
@@ -1157,8 +1535,104 @@ function castRay(angle) {
   if (side === 0 && cos > 0) hitU = 1 - hitU;
   if (side === 1 && sin < 0) hitU = 1 - hitU;
 
-  return { dist: Math.max(0.01, dist), type: hitType, side, hitU };
+  // World-space hit point for dynamic lighting
+  const hitWX = player.x + dist * cos;
+  const hitWY = player.y + dist * sin;
+
+  return { dist: Math.max(0.01, dist), type: hitType, side, hitU, hitWX, hitWY };
 }
+
+// --- Dynamic lights --------------------------------------------
+// Each level can define point lights that contribute additively to
+// walls (via a second render pass). Memory orbs and the boss also
+// act as lights at runtime.
+const LEVEL_LIGHTS = [
+  [],                                        // I  — no base lights (moonlit)
+  [],                                        // II — pitch dark, memories light everything
+  [],                                        // III— ambient bright, no accents
+  [],                                        // IV — driven by HOSPITAL_FLOOR_LIGHTS
+  [],                                        // V  — pitch dark, boss is the only light
+];
+
+// Chapter IV lights per hospital floor (fluorescent white, with
+// varying flicker for mood).
+const HOSPITAL_FLOOR_LIGHTS = [
+  // Floor 1 — reception
+  [
+    { x: 5.5,  y: 2.5,  r: 230, g: 250, b: 225, radius: 5.5, intensity: 1.0, flicker: 0.12 },
+    { x: 13.5, y: 2.5,  r: 230, g: 250, b: 225, radius: 5.5, intensity: 1.0, flicker: 0.15 },
+    { x: 9.5,  y: 10.5, r: 220, g: 240, b: 215, radius: 5,   intensity: 0.75, flicker: 0.1 },
+    { x: 16.5, y: 15.5, r: 230, g: 250, b: 225, radius: 3.5, intensity: 0.8, flicker: 0.4 },
+  ],
+  // Floor 2 — patient rooms
+  [
+    { x: 3.5,  y: 4.5,  r: 225, g: 245, b: 220, radius: 3.5, intensity: 0.9, flicker: 0.1 },
+    { x: 8.5,  y: 4.5,  r: 225, g: 245, b: 220, radius: 3.5, intensity: 0.9, flicker: 0.1 },
+    { x: 13.5, y: 4.5,  r: 225, g: 245, b: 220, radius: 3.5, intensity: 0.9, flicker: 0.45 },
+    { x: 17,   y: 4.5,  r: 225, g: 245, b: 220, radius: 3.0, intensity: 0.8, flicker: 0.15 },
+    { x: 9.5,  y: 10,   r: 220, g: 240, b: 215, radius: 5,   intensity: 0.7, flicker: 0.08 },
+    { x: 10,   y: 15,   r: 225, g: 245, b: 220, radius: 4,   intensity: 0.75, flicker: 0.12 },
+  ],
+  // Floor 3 — operating theater: one huge surgical lamp
+  [
+    { x: 8.5, y: 8.5, r: 255, g: 255, b: 245, radius: 8, intensity: 1.4, flicker: 0.04 },
+    { x: 3,   y: 3,   r: 230, g: 245, b: 220, radius: 3, intensity: 0.5, flicker: 0.2 },
+    { x: 14,  y: 3,   r: 230, g: 245, b: 220, radius: 3, intensity: 0.5, flicker: 0.2 },
+  ],
+  // Floor 4 — archive/morgue: one dying bulb
+  [
+    { x: 7.5, y: 19, r: 255, g: 200, b: 110, radius: 5, intensity: 0.6, flicker: 0.55 },
+    { x: 7.5, y: 3,  r: 180, g: 200, b: 220, radius: 3, intensity: 0.35, flicker: 0.3 },
+  ],
+];
+
+function getActiveLights() {
+  let base;
+  if (currentLevel === 3) {
+    base = HOSPITAL_FLOOR_LIGHTS[hospitalFloor] || [];
+  } else {
+    base = LEVEL_LIGHTS[currentLevel] || [];
+  }
+  const extra = [];
+  // Memory orbs emit a soft colored glow while they're still around
+  for (const m of memories) {
+    if (m.collected) continue;
+    extra.push({
+      x: m.x, y: m.y,
+      r: 180, g: 140, b: 220,
+      radius: 3.5, intensity: 0.85,
+      flicker: 0,
+    });
+  }
+  // Boss emits a dark-red menacing glow during the boss fight
+  if (boss && boss.alive) {
+    const bossPulse = 0.85 + Math.sin(performance.now() * 0.008) * 0.15;
+    extra.push({
+      x: boss.x, y: boss.y,
+      r: 220, g: 40, b: 60,
+      radius: 4.5 + boss.hp * 0.3, intensity: bossPulse,
+      flicker: 0.18,
+    });
+  }
+  // The player's light burst makes a big bright flash
+  if (lightBurstFlash > 0) {
+    extra.push({
+      x: player.x + Math.cos(player.angle) * 0.5,
+      y: player.y + Math.sin(player.angle) * 0.5,
+      r: 255, g: 250, b: 240,
+      radius: 12, intensity: 2.5 * lightBurstFlash,
+      flicker: 0,
+    });
+  }
+  return base.concat(extra);
+}
+
+// Per-column cache so the additive lighting pass doesn't have to
+// re-cast every ray.
+const wallHitWX = new Float64Array(W);
+const wallHitWY = new Float64Array(W);
+const wallDrawStart = new Float64Array(W);
+const wallLineH = new Float64Array(W);
 
 function renderWorld() {
   // Head bob (sinusoidal vertical shift when walking) + idle breathing
@@ -1181,12 +1655,11 @@ function renderWorld() {
   const fogR = style.fogColor[0];
   const fogG = style.fogColor[1];
   const fogB = style.fogColor[2];
-  const fogStr = `rgb(${fogR},${fogG},${fogB})`;
 
-  // Cast one textured strip per pixel column
+  // ---- Pass 1: textured walls + fog/tint ----
   for (let i = 0; i < W; i++) {
     const rayAngle = player.angle - FOV / 2 + (i / W) * FOV;
-    const { dist, type, side, hitU } = castRay(rayAngle);
+    const { dist, type, side, hitU, hitWX, hitWY } = castRay(rayAngle);
     const corrected = dist * Math.cos(rayAngle - player.angle);
     zBuffer[i] = corrected;
 
@@ -1200,28 +1673,63 @@ function renderWorld() {
     if (texX >= texW) texX = texW - 1;
 
     const sx = i + bobX;
-    // Blit a 1px-wide column of the texture, stretched to lineH
     ctx.drawImage(tex, texX, 0, 1, tex.height, sx, drawStart, 1, lineH);
 
-    // Side-face shading
     if (side === 1) {
       ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
       ctx.fillRect(sx, drawStart, 1, lineH);
     }
 
-    // Per-level wall tint (mood overlay)
     if (style.wallTint) {
       ctx.fillStyle = style.wallTint;
       ctx.fillRect(sx, drawStart, 1, lineH);
     }
 
-    // Distance fog — blend wall toward fog color
     let fog = (corrected - fogNear) / (fogFar - fogNear);
     if (fog < 0) fog = 0; else if (fog > 1) fog = 1;
     if (fog > 0) {
       ctx.fillStyle = `rgba(${fogR}, ${fogG}, ${fogB}, ${fog * 0.9})`;
       ctx.fillRect(sx, drawStart, 1, lineH);
     }
+
+    // Cache per-column data for the lighting pass
+    wallHitWX[i] = hitWX;
+    wallHitWY[i] = hitWY;
+    wallDrawStart[i] = drawStart;
+    wallLineH[i] = lineH;
+  }
+
+  // ---- Pass 2: additive point lights on walls ----
+  const lights = getActiveLights();
+  if (lights.length > 0) {
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < W; i++) {
+      let lr = 0, lg = 0, lb = 0;
+      const hx = wallHitWX[i], hy = wallHitWY[i];
+      for (let li = 0; li < lights.length; li++) {
+        const L = lights[li];
+        const dx = L.x - hx;
+        const dy = L.y - hy;
+        const d2 = dx * dx + dy * dy;
+        const R = L.radius;
+        if (d2 < R * R) {
+          const d = Math.sqrt(d2);
+          let f = 1 - d / R;
+          f = f * f * L.intensity;
+          if (L.flicker) f *= (1 - L.flicker + L.flicker * Math.sin(t * 0.02 + li));
+          lr += L.r * f;
+          lg += L.g * f;
+          lb += L.b * f;
+        }
+      }
+      if (lr + lg + lb > 2) {
+        // Soft clamp the brightness so lights feel real, not blown out
+        const m = 0.65;
+        ctx.fillStyle = `rgba(${Math.min(255, lr * m) | 0},${Math.min(255, lg * m) | 0},${Math.min(255, lb * m) | 0},1)`;
+        ctx.fillRect(i + bobX, wallDrawStart[i], 1, wallLineH[i]);
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
   }
 }
 
@@ -1269,6 +1777,168 @@ function renderMemories() {
     ctx.arc(screenX, centerY, radius * 0.35, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
     ctx.fill();
+  }
+}
+
+// --- Boss combat ----------------------------------------------
+const BOSS_MAX_HP = 6;
+
+function spawnBoss(x, y) {
+  boss = {
+    x, y,
+    vx: 0, vy: 0,
+    hp: BOSS_MAX_HP,
+    alive: true,
+    hitFlash: 0,
+    dyingT: 0,
+    attackCd: 0,
+    lunge: 0,
+  };
+  bossPhase = 0;
+  lightBurstCooldown = 0;
+  lightBurstFlash = 0;
+  bossDamageFade = 0;
+  updateBossHud();
+}
+
+function updateBossHud() {
+  const fill = document.getElementById('boss-fill');
+  if (!fill || !boss) return;
+  fill.style.width = Math.max(0, (boss.hp / BOSS_MAX_HP) * 100) + '%';
+}
+
+function updateBoss(dt) {
+  if (!boss) return;
+  bossPhase += dt;
+  if (!boss.alive) {
+    // Dying animation — fade out, then victory
+    boss.dyingT += dt;
+    if (boss.dyingT > 4.0 && !finishing) {
+      bossVictory();
+    }
+    return;
+  }
+  // AI: drift toward the player at a slower speed
+  const dx = player.x - boss.x;
+  const dy = player.y - boss.y;
+  const d = Math.hypot(dx, dy) || 0.0001;
+  const nx = dx / d, ny = dy / d;
+
+  // Occasional lunge — speeds up briefly every 3s
+  boss.attackCd -= dt;
+  if (boss.attackCd <= 0) {
+    boss.attackCd = 3 + Math.random() * 2;
+    boss.lunge = 1;
+  }
+  if (boss.lunge > 0) boss.lunge = Math.max(0, boss.lunge - dt * 1.2);
+
+  const speed = 1.4 + boss.lunge * 2.0;
+  const tvx = nx * speed;
+  const tvy = ny * speed;
+  boss.vx += (tvx - boss.vx) * Math.min(1, 4 * dt);
+  boss.vy += (tvy - boss.vy) * Math.min(1, 4 * dt);
+
+  // Move + basic wall collision (bounce on impact)
+  const newX = boss.x + boss.vx * dt;
+  const newY = boss.y + boss.vy * dt;
+  if (!isWall(newX, boss.y)) boss.x = newX; else boss.vx = -boss.vx * 0.3;
+  if (!isWall(boss.x, newY)) boss.y = newY; else boss.vy = -boss.vy * 0.3;
+
+  // Contact with the player darkens the screen (no HP system)
+  const pd = Math.hypot(boss.x - player.x, boss.y - player.y);
+  if (pd < 0.9) {
+    bossDamageFade = Math.min(1, bossDamageFade + dt * 1.5);
+  } else {
+    bossDamageFade = Math.max(0, bossDamageFade - dt * 0.8);
+  }
+  if (boss.hitFlash > 0) boss.hitFlash = Math.max(0, boss.hitFlash - dt * 3);
+}
+
+function bossVictory() {
+  finishing = true;
+  showStory('Der Schatten löst sich auf. Das Licht wird weicher. Du hörst, wie sich draußen eine Tür öffnet.');
+  setTimeout(triggerEnd, 6500);
+}
+
+function renderBoss() {
+  if (!boss) return;
+  const dx = boss.x - player.x;
+  const dy = boss.y - player.y;
+  const cos = Math.cos(player.angle);
+  const sin = Math.sin(player.angle);
+  const camDepth = dx * cos + dy * sin;
+  const camSide  = -dx * sin + dy * cos;
+  if (camDepth <= 0.15) return;
+
+  const screenX = Math.floor(W / 2 + (camSide / camDepth) * (W / 2)) + camOffX;
+  // Boss is larger than a memory orb and stretches vertically
+  const size = Math.max(8, Math.floor(H / camDepth * 0.75));
+  const centerY = H / 2 + camOffY;
+
+  if (zBuffer[Math.max(0, Math.min(W - 1, screenX))] < camDepth - 0.05) return;
+
+  const alpha = boss.alive ? 1 : Math.max(0, 1 - boss.dyingT / 4);
+  const pulse = 0.8 + Math.sin(performance.now() * 0.006) * 0.2;
+
+  // Outer dark aura
+  const aura = ctx.createRadialGradient(screenX, centerY, 0, screenX, centerY, size * 1.6);
+  aura.addColorStop(0, `rgba(60, 0, 10, ${0.85 * alpha})`);
+  aura.addColorStop(0.5, `rgba(30, 0, 5, ${0.55 * alpha})`);
+  aura.addColorStop(1, 'rgba(0, 0, 0, 0)');
+  ctx.fillStyle = aura;
+  ctx.fillRect(screenX - size * 1.6, centerY - size * 1.6, size * 3.2, size * 3.2);
+
+  // Elongated humanoid silhouette — ellipse
+  ctx.save();
+  ctx.translate(screenX, centerY);
+  ctx.scale(1, 1.9);
+  ctx.beginPath();
+  ctx.arc(0, 0, size * 0.55 * pulse, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(5, 0, 5, ${alpha})`;
+  ctx.fill();
+  // Red glowing "eyes"
+  const eyeY = -size * 0.4;
+  const eyeR = size * 0.06 * (0.8 + 0.2 * Math.sin(performance.now() * 0.005));
+  ctx.beginPath();
+  ctx.arc(-size * 0.14, eyeY, eyeR, 0, Math.PI * 2);
+  ctx.arc(size * 0.14, eyeY, eyeR, 0, Math.PI * 2);
+  ctx.fillStyle = `rgba(255, 40, 60, ${alpha})`;
+  ctx.fill();
+  ctx.restore();
+
+  // Hit flash overlay
+  if (boss.hitFlash > 0) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${boss.hitFlash * 0.6})`;
+    ctx.fillRect(screenX - size, centerY - size * 1.9, size * 2, size * 3.8);
+  }
+}
+
+function tryLightBurst() {
+  if (!boss || !boss.alive) return;
+  if (lightBurstCooldown > 0) return;
+  lightBurstCooldown = 0.9;
+  lightBurstFlash = 1.0;
+  playChime();
+  // Cone hit test: boss must be roughly in front of the player and
+  // within 6 cells for the light-burst to land.
+  const dx = boss.x - player.x;
+  const dy = boss.y - player.y;
+  const d = Math.hypot(dx, dy);
+  if (d > 6.5) return;
+  const toBossAngle = Math.atan2(dy, dx);
+  let diff = toBossAngle - player.angle;
+  while (diff >  Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  const halfCone = Math.PI / 5; // ±36°
+  if (Math.abs(diff) > halfCone) return;
+
+  // Hit! damage boss
+  boss.hp -= 1;
+  boss.hitFlash = 1;
+  updateBossHud();
+  if (boss.hp <= 0) {
+    boss.alive = false;
+    boss.dyingT = 0;
   }
 }
 
@@ -1518,19 +2188,39 @@ function loop(now) {
         velX = 0; velY = 0;
       }
     }
+
+    // Boss combat tick
+    if (boss) updateBoss(dt);
+    if (lightBurstCooldown > 0) lightBurstCooldown = Math.max(0, lightBurstCooldown - dt);
+    if (lightBurstFlash > 0)    lightBurstFlash    = Math.max(0, lightBurstFlash    - dt * 3);
   }
 
   renderWorld();
   renderMemories();
+  if (boss) renderBoss();
   renderCrosshair();
   renderPostFX();
   renderMinimap();
 
-  // Prompt near an uncollected memory
+  // DOM overlays for burst flash + boss damage fade
+  const bf = document.getElementById('burst-flash');
+  if (bf) bf.style.background = `rgba(255, 252, 240, ${lightBurstFlash * 0.75})`;
+  const df = document.getElementById('damage-fade');
+  if (df) df.style.boxShadow = `inset 0 0 200px 60px rgba(140, 10, 30, ${bossDamageFade * 0.85})`;
+
+  // Prompt near an uncollected memory (or hint in the boss fight)
   if (gameStarted && !finishing) {
-    const { m, d } = nearestUncollected();
-    if (m && d < 0.9) promptEl.classList.add('show');
-    else              promptEl.classList.remove('show');
+    if (currentLevel === 4 && boss && boss.alive) {
+      promptEl.textContent = lightBurstCooldown > 0.05
+        ? '[ Licht lädt nach... ]'
+        : '[ E ] — Licht werfen';
+      promptEl.classList.add('show');
+    } else {
+      promptEl.textContent = '[ E ] — berühren';
+      const { m, d } = nearestUncollected();
+      if (m && d < 0.9) promptEl.classList.add('show');
+      else              promptEl.classList.remove('show');
+    }
   } else {
     promptEl.classList.remove('show');
   }
