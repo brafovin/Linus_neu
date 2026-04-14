@@ -212,7 +212,7 @@
   <div id="scanlines"></div>
   <div id="hud">
     <div class="mem">Erinnerungen&nbsp;&nbsp;<span id="mcount">0</span>&thinsp;/&thinsp;5</div>
-    <div class="hint">WASD laufen&nbsp;&nbsp;•&nbsp;&nbsp;Maus schauen&nbsp;&nbsp;•&nbsp;&nbsp;E aufheben</div>
+    <div class="hint">W&thinsp;A&thinsp;S&thinsp;D laufen&nbsp;&nbsp;•&nbsp;&nbsp;&larr;&thinsp;&rarr; drehen&nbsp;&nbsp;•&nbsp;&nbsp;E aufheben</div>
   </div>
   <div id="prompt">[ E ] &mdash; berühren</div>
   <div id="story"></div>
@@ -221,7 +221,7 @@
     <p>Du bist eingeschlafen. Aber etwas ist anders.</p>
     <p>Die Räume sind leer. Die Luft steht still. Irgendwo in dir spürst du, dass du hier schon einmal warst &mdash; in einem anderen Leben, an einem anderen Nachmittag.</p>
     <p>Finde die fünf Erinnerungsfragmente. Vielleicht wachst du dann auf.</p>
-    <div class="start">[ Klicken zum Eintreten ]</div>
+    <div class="start">[ Leertaste oder Enter zum Eintreten ]</div>
     <div class="credits">ein kleines dreamcore spiel</div>
   </div>
   <div id="end">
@@ -369,17 +369,32 @@ const keys = Object.create(null);
 let gameStarted = false;
 let finishing = false;
 
+function startGame() {
+  if (gameStarted) return;
+  gameStarted = true;
+  titleEl.classList.add('hide');
+}
+
 document.addEventListener('keydown', (e) => {
+  // Any key on the title screen starts the game
+  if (!gameStarted) {
+    if (e.code === 'Space' || e.code === 'Enter' ||
+        e.code.startsWith('Key') || e.code.startsWith('Arrow')) {
+      startGame();
+      e.preventDefault();
+      return;
+    }
+  }
+  // Prevent page scroll from arrow keys / space while playing
+  if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
   keys[e.code] = true;
   if (e.code === 'KeyE' && gameStarted) tryCollect();
-});
+}, { passive: false });
 document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
+// Mouse look stays available as an optional bonus (click to enable)
 canvas.addEventListener('click', () => {
-  if (!gameStarted) {
-    gameStarted = true;
-    titleEl.classList.add('hide');
-  }
+  if (!gameStarted) startGame();
   if (canvas.requestPointerLock) canvas.requestPointerLock();
 });
 
